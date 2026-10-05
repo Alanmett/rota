@@ -90,6 +90,7 @@ main { max-width: 680px; margin: 0 auto; padding: 16px 16px calc(var(--tabbar-h)
   color: var(--muted); text-decoration: none; font-size: .72rem; font-weight: 600;
 }
 .tabbar a span { font-size: 1.3rem; line-height: 1; filter: grayscale(1); opacity: .65; }
+.tabbar a em { font-style: normal; white-space: nowrap; }
 .tabbar a[aria-current] { color: var(--primary); }
 .tabbar a[aria-current] span { filter: none; opacity: 1; }
 @media (min-width: 720px) {

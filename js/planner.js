@@ -3,17 +3,18 @@
 
 import { haversineKm, parseISODate, fmtClock } from './util.js';
 import { hoursOn } from './hours.js';
+import { t } from './i18n.js';
 
 export const PACES = {
-  rahat: { label: 'Rahat', sub: '3–4 yer/gün', budget: 300 },
-  normal: { label: 'Normal', sub: '4–6 yer/gün', budget: 420 },
-  yogun: { label: 'Yoğun', sub: 'Sabah–akşam', budget: 540 },
+  rahat: { label: t('Rahat'), sub: t('3–4 yer/gün'), budget: 300 },
+  normal: { label: t('Normal'), sub: t('4–6 yer/gün'), budget: 420 },
+  yogun: { label: t('Yoğun'), sub: t('Sabah–akşam'), budget: 540 },
 };
 
 export const TRANSPORTS = {
-  araba: { label: 'Araba', emoji: '🚗', gmode: 'driving' },
-  toplu: { label: 'Toplu taşıma', emoji: '🚌', gmode: 'transit' },
-  yuruyus: { label: 'Yürüyerek', emoji: '🚶', gmode: 'walking' },
+  araba: { label: t('Araba'), emoji: '🚗', gmode: 'driving' },
+  toplu: { label: t('Toplu taşıma'), emoji: '🚌', gmode: 'transit' },
+  yuruyus: { label: t('Yürüyerek'), emoji: '🚶', gmode: 'walking' },
 };
 
 export const LEG_EMOJI = { walk: '🚶', car: '🚗', transit: '🚌' };
@@ -152,10 +153,10 @@ export function computeTimeline(trip, di) {
     const start = t, end = t + p.dur, warn = [];
     const hrs = hoursOn(p.hours, date);
     if (hrs.known) {
-      if (!hrs.open) warn.push('Bu gün kapalı görünüyor');
+      if (!hrs.open) warn.push(t('Bu gün kapalı görünüyor'));
       else if (!hrs.ranges.some(([a, b]) => start >= a - 1 && end <= b + 1)) {
         const r = hrs.ranges.find(([, b]) => b > start);
-        warn.push(!r ? 'Bu saatte kapalı olabilir' : start < r[0] ? `Açılış ${fmtClock(r[0])}` : `Kapanış ${fmtClock(r[1])}, vakit dar`);
+        warn.push(!r ? t('Bu saatte kapalı olabilir') : start < r[0] ? t('Açılış {x}', { x: fmtClock(r[0]) }) : t('Kapanış {x}, vakit dar', { x: fmtClock(r[1]) }));
       }
     }
     items.push({ kind: 'stop', id, place: p, start, end, warn });

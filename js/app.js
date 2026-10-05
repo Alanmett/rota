@@ -9,16 +9,21 @@ import { renderTrip } from './views/trip.js';
 import { renderSettings } from './views/settings.js';
 import { getSettings } from './store.js';
 import { setCurrency } from './util.js';
+import { t } from './i18n.js';
 
 setCurrency(getSettings().currency);
+// index.html'deki sabit metinler (sekme adları vb.)
+for (const el of document.querySelectorAll('[data-t]')) el.textContent = t(el.dataset.t);
+document.querySelector('.tabbar').setAttribute('aria-label', t('Ana menü'));
+document.querySelector('#sheet').setAttribute('aria-label', t('Ayrıntılar'));
 
 const routes = [
-  [/^#\/oner$/, renderSuggest, 'oner', 'Nereye gidelim?'],
-  [/^#\/kesfet$/, renderNear, 'kesfet', 'Keşfet'],
-  [/^#\/planla$/, renderPlan, 'planla', 'Gezi planla'],
-  [/^#\/geziler$/, renderTrips, 'geziler', 'Gezilerim'],
-  [/^#\/gezi\/([\w-]+)(?:\/(plan|harita|butce|bilgi))?$/, renderTrip, 'geziler', 'Gezi'],
-  [/^#\/ayarlar$/, renderSettings, 'ayarlar', 'Ayarlar'],
+  [/^#\/oner$/, renderSuggest, 'oner', t('Nereye gidelim?')],
+  [/^#\/kesfet$/, renderNear, 'kesfet', t('Keşfet')],
+  [/^#\/planla$/, renderPlan, 'planla', t('Gezi planla')],
+  [/^#\/geziler$/, renderTrips, 'geziler', t('Gezilerim')],
+  [/^#\/gezi\/([\w-]+)(?:\/(plan|harita|butce|bilgi))?$/, renderTrip, 'geziler', t('Gezi')],
+  [/^#\/ayarlar$/, renderSettings, 'ayarlar', t('Ayarlar')],
 ];
 
 let lastTripId = null;
@@ -40,7 +45,7 @@ function route() {
     fn(page, ...args);
   } catch (e) {
     console.error(e);
-    page.append(h('p', { class: 'error' }, `Bir hata oluştu: ${e.message}`));
+    page.append(h('p', { class: 'error' }, t('Bir hata oluştu: {e}', { e: e.message })));
   }
   // Gezi içindeki sekmeler arasında geçerken sayfa başa atlamasın
   const tripId = fn === renderTrip ? args[0] : null;

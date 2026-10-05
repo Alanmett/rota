@@ -6,24 +6,25 @@ import { buildItinerary, computeTimeline } from './planner.js';
 import { weatherDaily, driveRoute, countryInfo, wikiForTags, wikiSearch } from './api.js';
 import { saveTrip } from './store.js';
 import { dateRange, uid, sleep } from './util.js';
+import { t } from './i18n.js';
 
 export async function generateTrip(f, settings, progress = () => {}) {
   const dates = dateRange(f.startDate, f.endDate);
   let found = f.places;
   if (!found) {
-    progress('Gezilecek yerler aranıyor…');
+    progress(t('Gezilecek yerler aranıyor…'));
     found = await fetchPlaces({ lat: f.dest.lat, lon: f.dest.lon, radiusKm: f.radiusKm, cats: f.interests });
   }
   const sights = found.filter(isSight);
-  if (!sights.length) throw new Error('Bu bölgede seçtiğin ilgi alanlarına uygun yer bulunamadı. Alanı genişletmeyi ya da başka ilgi alanları seçmeyi dene.');
+  if (!sights.length) throw new Error(t('Bu bölgede seçtiğin ilgi alanlarına uygun yer bulunamadı. Alanı genişletmeyi ya da başka ilgi alanları seçmeyi dene.'));
 
   // Kapalı günleri doğru planlamak için çalışma saatlerini kısa süre bekle (sunucu yavaşsa saatsiz devam).
   if (found.hoursReady) {
-    progress('Çalışma saatleri kontrol ediliyor…');
+    progress(t('Çalışma saatleri kontrol ediliyor…'));
     await Promise.race([found.hoursReady, sleep(6000)]);
   }
 
-  progress('Günler planlanıyor…');
+  progress(t('Günler planlanıyor…'));
   const plan = buildItinerary(sights, dates, {
     pace: f.pace, transport: f.transport, travelers: f.travelers,
     origin: f.origin || null, startMin: f.startMin, firstDayBudget: f.firstDayBudget,
@@ -43,7 +44,7 @@ export async function generateTrip(f, settings, progress = () => {}) {
   };
 
   // Ek bilgiler birbirinden bağımsız; aynı anda istenir. Biri başarısız olursa gezi yine kaydedilir.
-  progress('Yemek molaları, hava durumu ve yer bilgisi hazırlanıyor…');
+  progress(t('Yemek molaları, hava durumu ve yer bilgisi hazırlanıyor…'));
   const soft = (label, fn) => fn().catch(e => console.warn(label, e));
   await Promise.all([
     soft('yemek', () => addFoodSuggestions(trip)),

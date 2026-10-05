@@ -2,20 +2,20 @@
 // yol süresine göre gidilecek yer önerir. Önce kuş uçuşu mesafeyle kaba eleme, sonra gerçek süre:
 // araba → OSRM, tren → transport.opendata.ch (İsviçre'den kalkışlarda gerçek tarife).
 
-import { haversineKm, sleep } from './util.js';
+import { haversineKm } from './util.js';
+import { t, locale, getLang } from './i18n.js';
+import { wikidataLabels } from './api.js';
 
 export const KINDS = {
-  s: { label: 'Şehir & kasaba', emoji: '🏘️' },
-  n: { label: 'Doğa', emoji: '🏞️' },
-  a: { label: 'Gezilecek yer', emoji: '🏛️' },
+  s: { label: t('Şehir & kasaba'), emoji: '🏘️' },
+  n: { label: t('Doğa'), emoji: '🏞️' },
+  a: { label: t('Gezilecek yer'), emoji: '🏛️' },
 };
 
-export const COUNTRY_NAMES = {
-  CH: 'İsviçre', IT: 'İtalya', FR: 'Fransa', DE: 'Almanya', AT: 'Avusturya', LI: 'Lihtenştayn', TR: 'Türkiye',
-  ES: 'İspanya', PT: 'Portekiz', NL: 'Hollanda', BE: 'Belçika', LU: 'Lüksemburg', CZ: 'Çekya', SI: 'Slovenya',
-  HR: 'Hırvatistan', GR: 'Yunanistan', GB: 'Birleşik Krallık', MC: 'Monako', HU: 'Macaristan', PL: 'Polonya',
-  DK: 'Danimarka', SM: 'San Marino', VA: 'Vatikan',
-};
+const CODES = ['CH', 'IT', 'FR', 'DE', 'AT', 'LI', 'TR', 'ES', 'PT', 'NL', 'BE', 'LU', 'CZ', 'SI', 'HR', 'GR', 'GB', 'MC', 'HU', 'PL', 'DK', 'SM', 'VA'];
+// Ülke adları seçili dilde, tarayıcının kendi çevirisinden
+const regionNames = new Intl.DisplayNames([locale()], { type: 'region' });
+export const COUNTRY_NAMES = Object.fromEntries(CODES.map(c => [c, regionNames.of(c)]));
 
 export const flag = cc => String.fromCodePoint(...[...cc.toUpperCase()].map(c => 0x1F1E6 + c.charCodeAt(0) - 65));
 
@@ -104,7 +104,7 @@ async function trainTimes(origin, list) {
 }
 
 export async function suggest({ origin, minH, maxH, mode, countries, kinds, limit = 24 }, progress = () => {}) {
-  progress('Gidilecek yerler taranıyor…');
+  progress(t('Gidilecek yerler taranıyor…'));
   const all = await loadDestinations();
   const cset = countries?.length ? new Set(countries) : null;
   const kset = new Set(kinds);
@@ -129,7 +129,7 @@ export async function suggest({ origin, minH, maxH, mode, countries, kinds, limi
     if (picked.length >= (mode === 'tren' ? 40 : 80)) break;
   }
 
-  progress(mode === 'tren' ? 'Tren bağlantıları aranıyor…' : 'Yol süreleri hesaplanıyor…');
+  progress(mode === 'tren' ? t('Tren bağlantıları aranıyor…') : t('Yol süreleri hesaplanıyor…'));
   // Tren: önce tahmini süresi aralığa en yakın, en önemli adaylar sorulur
   if (mode === 'tren') {
     const mid = (minH + maxH) / 2;
@@ -145,5 +145,18 @@ export async function suggest({ origin, minH, maxH, mode, countries, kinds, limi
     return h >= minH && h <= maxH;
   });
   ok.sort((a, b) => b.s - a.s);
-  return { results: ok.slice(0, limit), scanned: cands.length };
+  const results = ok.slice(0, limit);
+
+  // Veri setindeki adlar Türkçe; başka dilde gösterilen sonuçların adı o dilde çekilir (internet yoksa Türkçe kalır)
+  if (getLang() !== 'tr' && results.length) {
+    const all = [...results, ...results.flatMap(r => r.nearby || [])];
+    try {
+      const labels = await wikidataLabels(all.map(x => x.q));
+      for (const x of all) {
+        const l = labels.get(x.q)?.label;
+        if (l && !/^Q\d+$/.test(l)) x.name = l.split(/\s*[,(]/)[0].trim() || l;
+      }
+    } catch { /* Türkçe adlarla devam */ }
+  }
+  return { results, scanned: cands.length };
 }

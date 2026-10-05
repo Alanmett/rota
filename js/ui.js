@@ -1,5 +1,7 @@
 // Küçük arayüz yardımcıları. Dışarıdan gelen metinler her zaman textContent ile basılır.
 
+import { t } from './i18n.js';
+
 export function h(tag, attrs, ...kids) {
   const el = document.createElement(tag);
   let value;
@@ -98,9 +100,9 @@ export function stepper(value, min, max, onChange, label = '') {
   const out = h('output', { 'aria-live': 'polite' }, String(value));
   const set = v => { value = Math.max(min, Math.min(max, v)); out.textContent = value; onChange(value); };
   return h('div', { class: 'stepper' },
-    h('button', { type: 'button', 'aria-label': `${label} azalt`, onclick: () => set(value - 1) }, '−'),
+    h('button', { type: 'button', 'aria-label': t('{x}: azalt', { x: label }), onclick: () => set(value - 1) }, '−'),
     out,
-    h('button', { type: 'button', 'aria-label': `${label} artır`, onclick: () => set(value + 1) }, '+'));
+    h('button', { type: 'button', 'aria-label': t('{x}: artır', { x: label }), onclick: () => set(value + 1) }, '+'));
 }
 
 export const section = (title, ...kids) => h('section', { class: 'form-sec' }, h('h2', { class: 'h-sec' }, title), ...kids);

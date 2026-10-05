@@ -8,6 +8,15 @@ Telefonda uygulama gibi çalışan (PWA) gezi planlayıcı. Günübirlik ve uzun
 - **Bütçe:** Yakıt, konaklama, yemek, giriş ücretleri; her kalem düzenlenebilir. Para birimi ve fiyatlar yaşanılan ülkeye göre (İsviçre / Türkiye).
 - **Bilgiler:** Hava tahmini; gidilen yere, mevsime ve kişilere özel uyarılar (vinyet, ZTL, Müzekart, roaming, acil numaralar…).
 - İnternetsiz açılır, veriler sadece cihazda saklanır, hesap gerekmez.
+- Türkçe, İngilizce ve Fransızca (Ayarlar → Dil). Yer adları ve Wikipedia özetleri de seçilen dilde gelir.
+
+## Çeviriler
+
+Kaynak dil Türkçe: koddaki metinler `t('Türkçe metin')` ile yazılır, çevirileri `js/i18n/en.js` ve `js/i18n/fr.js` içindedir. Tekil/çoğul için: `"{n} {n:night|nights}"`. Yeni metin ekledikten sonra eksik çevirileri bulmak için:
+
+```
+powershell -ExecutionPolicy Bypass -File tools/i18n-check.ps1
+```
 
 ## Veri kaynakları (hepsi ücretsiz, anahtarsız)
 

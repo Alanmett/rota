@@ -2,6 +2,10 @@
 // OpenStreetMap (Overpass, Nominatim), Wikipedia/Wikidata, Open-Meteo, OSRM, REST Countries.
 
 import { sleep, toISODate, parseISODate } from './util.js';
+import { t, getLang } from './i18n.js';
+
+// Kullanıcının dili önce, sonra yaygın diller (yer adları ve Wikipedia için)
+const langChain = () => [...new Set([getLang(), 'en', 'de', 'fr', 'it', 'tr'])];
 
 async function fetchJSON(url, opts = {}, timeout = 20000) {
   const ctl = new AbortController();
@@ -11,8 +15,8 @@ async function fetchJSON(url, opts = {}, timeout = 20000) {
     if (!res.ok) { const err = new Error(`HTTP ${res.status}`); err.status = res.status; throw err; }
     return await res.json();
   } catch (e) {
-    if (e.name === 'AbortError') throw new Error('Zaman aşımı');
-    if (!navigator.onLine) throw new Error('İnternet bağlantısı yok');
+    if (e.name === 'AbortError') throw new Error(t('Zaman aşımı'));
+    if (!navigator.onLine) { const err = new Error(t('İnternet bağlantısı yok')); err.offline = true; throw err; }
     throw e;
   } finally {
     clearTimeout(timer);
@@ -35,10 +39,10 @@ export async function overpass(query, timeout = 25000, maxServers = OVERPASS.len
       }, timeout);
     } catch (e) {
       last = e;
-      if (e.message === 'İnternet bağlantısı yok') break;
+      if (e.offline) break;
     }
   }
-  throw new Error(`Harita verisi sunucusuna ulaşılamadı (${last?.message || 'bilinmeyen hata'}). Biraz sonra tekrar dene.`);
+  throw new Error(t('Harita verisi sunucusuna ulaşılamadı ({err}). Biraz sonra tekrar dene.', { err: last?.message || t('bilinmeyen hata') }));
 }
 
 // ---------- Wikidata (görülmeye değer yerler + önem sırası) ----------
@@ -85,10 +89,11 @@ export async function wikidataAround(lat, lon, radiusKm, typeIds, minSitelinks =
 // Seçilen yerlerin adları (Türkçe varsa Türkçe) ve Türkçe Wikipedia maddesi.
 export async function wikidataLabels(qids) {
   if (!qids.length) return new Map();
+  // trTitle: kullanıcının dilindeki Wikipedia maddesi (ad tarihsel olarak "tr" kaldı)
   const q = `SELECT ?item ?label ?tr WHERE {
   VALUES ?item { ${qids.map(x => 'wd:' + x).join(' ')} }
-  OPTIONAL { ?tr schema:about ?item ; schema:isPartOf <https://tr.wikipedia.org/> . }
-  SERVICE wikibase:label { bd:serviceParam wikibase:language "tr,en,de,fr,it". ?item rdfs:label ?label . }
+  OPTIONAL { ?tr schema:about ?item ; schema:isPartOf <https://${getLang()}.wikipedia.org/> . }
+  SERVICE wikibase:label { bd:serviceParam wikibase:language "${langChain().join(',')}". ?item rdfs:label ?label . }
 }`;
   const r = await fetchJSON(`https://query.wikidata.org/sparql?format=json&query=${encodeURIComponent(q)}`, {
     headers: { Accept: 'application/sparql-results+json' },
@@ -133,13 +138,13 @@ function normPlace(r) {
 
 export async function geocode(q) {
   await nomThrottle();
-  const u = `${NOM}/search?format=jsonv2&addressdetails=1&extratags=1&limit=6&accept-language=tr&q=${encodeURIComponent(q)}`;
+  const u = `${NOM}/search?format=jsonv2&addressdetails=1&extratags=1&limit=6&accept-language=${getLang()}&q=${encodeURIComponent(q)}`;
   return (await fetchJSON(u)).map(normPlace);
 }
 
 export async function reverseGeocode(lat, lon, zoom = 14) {
   await nomThrottle();
-  const u = `${NOM}/reverse?format=jsonv2&addressdetails=1&extratags=1&zoom=${zoom}&accept-language=tr&lat=${lat}&lon=${lon}`;
+  const u = `${NOM}/reverse?format=jsonv2&addressdetails=1&extratags=1&zoom=${zoom}&accept-language=${getLang()}&lat=${lat}&lon=${lon}`;
   const r = await fetchJSON(u);
   return r && !r.error ? normPlace(r) : null;
 }
@@ -173,20 +178,20 @@ export async function wikiSummary(lang, title) {
   }
 }
 
-async function wikidataSitelinks(qid) {
-  const u = `https://www.wikidata.org/w/api.php?action=wbgetentities&ids=${encodeURIComponent(qid)}&props=sitelinks&sitefilter=trwiki%7Cenwiki&format=json&origin=*`;
+async function wikidataSitelinks(qid, langs) {
+  const u = `https://www.wikidata.org/w/api.php?action=wbgetentities&ids=${encodeURIComponent(qid)}&props=sitelinks&sitefilter=${langs.map(l => l + 'wiki').join('%7C')}&format=json&origin=*`;
   const r = await fetchJSON(u, {}, 12000);
   const sl = r.entities?.[qid]?.sitelinks || {};
-  return { tr: sl.trwiki?.title || null, en: sl.enwiki?.title || null };
+  return Object.fromEntries(langs.map(l => [l, sl[l + 'wiki']?.title || null]));
 }
 
-// Türkçe makale varsa onu, yoksa İngilizcesini getirir.
+// Kullanıcının dilinde makale varsa onu, yoksa İngilizcesini getirir.
 export async function wikiForTags({ wikidata, wikipedia }) {
+  const langs = [...new Set([getLang(), 'en'])];
   if (wikidata) {
     try {
-      const s = await wikidataSitelinks(wikidata);
-      if (s.tr) { const r = await wikiSummary('tr', s.tr); if (r) return r; }
-      if (s.en) { const r = await wikiSummary('en', s.en); if (r) return r; }
+      const s = await wikidataSitelinks(wikidata, langs);
+      for (const l of langs) if (s[l]) { const r = await wikiSummary(l, s[l]); if (r) return r; }
     } catch { /* aşağıdaki yolu dene */ }
   }
   if (wikipedia) {
@@ -196,25 +201,25 @@ export async function wikiForTags({ wikidata, wikipedia }) {
   return null;
 }
 
-export async function wikiSearch(q, lang = 'tr') {
+export async function wikiSearch(q, lang = getLang()) {
   const u = `https://${lang}.wikipedia.org/w/api.php?action=query&list=search&srsearch=${encodeURIComponent(q)}&srlimit=1&format=json&origin=*`;
   const r = await fetchJSON(u, {}, 12000);
-  const t = r.query?.search?.[0]?.title;
-  return t ? wikiSummary(lang, t) : null;
+  const title = r.query?.search?.[0]?.title;
+  return title ? wikiSummary(lang, title) : null;
 }
 
 // ---------- Open-Meteo (hava) ----------
 export function WX(code) {
-  if (code === 0) return ['☀️', 'Açık'];
-  if (code <= 2) return ['🌤️', 'Parçalı bulutlu'];
-  if (code === 3) return ['☁️', 'Kapalı'];
-  if (code <= 48) return ['🌫️', 'Sisli'];
-  if (code <= 57) return ['🌦️', 'Çisenti'];
-  if (code <= 67) return ['🌧️', 'Yağmurlu'];
-  if (code <= 77) return ['❄️', 'Karlı'];
-  if (code <= 82) return ['🌧️', 'Sağanak'];
-  if (code <= 86) return ['🌨️', 'Kar sağanağı'];
-  return ['⛈️', 'Gök gürültülü'];
+  if (code === 0) return ['☀️', t('Açık')];
+  if (code <= 2) return ['🌤️', t('Parçalı bulutlu')];
+  if (code === 3) return ['☁️', t('Kapalı')];
+  if (code <= 48) return ['🌫️', t('Sisli')];
+  if (code <= 57) return ['🌦️', t('Çisenti')];
+  if (code <= 67) return ['🌧️', t('Yağmurlu')];
+  if (code <= 77) return ['❄️', t('Karlı')];
+  if (code <= 82) return ['🌧️', t('Sağanak')];
+  if (code <= 86) return ['🌨️', t('Kar sağanağı')];
+  return ['⛈️', t('Gök gürültülü')];
 }
 
 export async function weatherNow(lat, lon) {
@@ -275,7 +280,7 @@ export async function countryInfo(cc) {
   const r = await fetchJSON(`https://restcountries.com/v3.1/alpha/${encodeURIComponent(cc)}?fields=name,translations,currencies,languages,car,idd,region,capital`, {}, 12000);
   const c = Array.isArray(r) ? r[0] : r;
   return {
-    name: c.translations?.tur?.common || c.name?.common || cc.toUpperCase(),
+    name: c.translations?.[{ tr: 'tur', fr: 'fra' }[getLang()]]?.common || c.name?.common || cc.toUpperCase(),
     currencies: Object.entries(c.currencies || {}).map(([code, v]) => `${v.name} (${code}${v.symbol ? ', ' + v.symbol : ''})`),
     languages: Object.values(c.languages || {}),
     driveSide: c.car?.side || null,

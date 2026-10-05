@@ -2,18 +2,19 @@
 
 import { overpass, wikidataAround, wikidataLabels, wikidataSitelinkCounts } from './api.js';
 import { bboxAround, haversineKm, normName } from './util.js';
+import { t, getLang } from './i18n.js';
 
 export const CATS = {
-  tarihi: { label: 'Tarihi', emoji: '🏛️' },
-  muze: { label: 'Müze', emoji: '🖼️' },
-  dogal: { label: 'Doğa', emoji: '🌲' },
-  manzara: { label: 'Manzara', emoji: '🌄' },
-  dini: { label: 'Dini yapı', emoji: '🕌' },
-  plaj: { label: 'Plaj & koy', emoji: '🏖️' },
-  park: { label: 'Park & bahçe', emoji: '🌳' },
-  aile: { label: 'Aile & eğlence', emoji: '🎡' },
-  yemek: { label: 'Yemek', emoji: '🍽️' },
-  kafe: { label: 'Kafe', emoji: '☕' },
+  tarihi: { label: t('Tarihi'), emoji: '🏛️' },
+  muze: { label: t('Müze'), emoji: '🖼️' },
+  dogal: { label: t('Doğa'), emoji: '🌲' },
+  manzara: { label: t('Manzara'), emoji: '🌄' },
+  dini: { label: t('Dini yapı'), emoji: '🕌' },
+  plaj: { label: t('Plaj & koy'), emoji: '🏖️' },
+  park: { label: t('Park & bahçe'), emoji: '🌳' },
+  aile: { label: t('Aile & eğlence'), emoji: '🎡' },
+  yemek: { label: t('Yemek'), emoji: '🍽️' },
+  kafe: { label: t('Kafe'), emoji: '☕' },
 };
 export const SIGHT_CATS = ['tarihi', 'muze', 'dogal', 'manzara', 'dini', 'plaj', 'park', 'aile'];
 
@@ -54,7 +55,7 @@ const TYPE_EMOJI = {
   zoo: '🦁', theme_park: '🎢', aquarium: '🐠', water_park: '🌊', restaurant: '🍽️', cafe: '☕',
 };
 
-export const typeLabel = p => TYPES[p.type]?.[0] || 'Yer';
+export const typeLabel = p => t(TYPES[p.type]?.[0] || 'Yer');
 export const catEmoji = p => TYPE_EMOJI[p.type] || CATS[p.cats?.[0]]?.emoji || '📍';
 export const isSight = p => p.cats.some(c => c !== 'yemek' && c !== 'kafe');
 export function isPaid(p) {
@@ -149,16 +150,17 @@ function osmBase(t, type) {
 // Wikidata sayısı alınamazsa kullanılacak kaba tahmin
 const wikiFallback = t => (t.wikipedia ? 2.5 : 0) + (t.wikidata ? 1 : 0);
 
-const KEEP = ['name', 'name:tr', 'name:en', 'opening_hours', 'website', 'contact:website', 'phone', 'contact:phone',
+const KEEP = ['name', 'name:tr', 'name:en', 'name:fr', 'opening_hours', 'website', 'contact:website', 'phone', 'contact:phone',
   'wikipedia', 'wikidata', 'fee', 'charge', 'cuisine', 'addr:street', 'addr:housenumber', 'addr:district', 'addr:city',
   'addr:province', 'description', 'description:tr', 'image', 'wikimedia_commons', 'religion', 'historic', 'tourism',
   'natural', 'amenity', 'leisure', 'ele', 'heritage', 'wheelchair', 'diet:vegetarian'];
 
 function parseElements(elements) {
   const out = [];
+  const lang = getLang();
   for (const el of elements || []) {
     const t = el.tags || {};
-    const name = t['name:tr'] || t.name;
+    const name = t[`name:${lang}`] || t.name;
     const lat = el.lat ?? el.center?.lat, lon = el.lon ?? el.center?.lon;
     if (!name || lat == null || lon == null || GENERIC_NAME.test(name)) continue;
     const { cats, type } = classify(t);
@@ -268,7 +270,7 @@ async function fetchWikidataPlaces(lat, lon, radiusKm, sightCats) {
     out.push({
       id: 'q' + r.qid.slice(1), name: r.label.split(/\s*[,(]/)[0].trim() || r.label, lat: r.lat, lon: r.lon,
       cats, type: r.type, dur: TYPES[r.type]?.[1] || 40, score: s, hours: null, _sl: r.sitelinks,
-      tags: { wikidata: r.qid, ...(r.trTitle ? { wikipedia: `tr:${r.trTitle}` } : {}) },
+      tags: { wikidata: r.qid, ...(r.trTitle ? { wikipedia: `${getLang()}:${r.trTitle}` } : {}) },
     });
   }
   return out;
@@ -327,7 +329,7 @@ export async function fetchPlaces({ lat, lon, radiusKm, cats }) {
   }
   for (const p of osm) {
     const n = sl.get(p.tags.wikidata);
-    if (n != null) p.score = p._base + popularity(n, (p.tags.wikipedia || '').startsWith('tr:'));
+    if (n != null) p.score = p._base + popularity(n, (p.tags.wikipedia || '').startsWith(`${getLang()}:`));
   }
 
   // Aynı Wikidata kimliğine sahip OSM kaydı varsa birleştir (OSM'nin saat bilgisi + Wikidata'nın türü/kategorisi).
@@ -337,7 +339,7 @@ export async function fetchPlaces({ lat, lon, radiusKm, cats }) {
     const o = osmByQ.get(w.tags.wikidata);
     if (o) {
       for (const c of w.cats) if (!o.cats.includes(c)) o.cats.push(c);
-      if (w.tags.wikipedia && !o.tags.wikipedia?.startsWith('tr:')) o.tags.wikipedia = w.tags.wikipedia;
+      if (w.tags.wikipedia && !o.tags.wikipedia?.startsWith(`${getLang()}:`)) o.tags.wikipedia = w.tags.wikipedia;
     } else merged.push(w);
   }
 
@@ -402,4 +404,4 @@ const CUISINE = {
   homestyle: 'Ev yemekleri', coffee_shop: 'Kahve', manti: 'Mantı', swiss: 'İsviçre mutfağı', fondue: 'Fondü',
   german: 'Alman', austrian: 'Avusturya', spanish: 'İspanyol', thai: 'Tay', vietnamese: 'Vietnam',
 };
-export const cuisineLabel = c => (c || '').split(';').slice(0, 2).map(x => CUISINE[x.trim()] || x.trim().replace(/_/g, ' ')).join(', ');
+export const cuisineLabel = c => (c || '').split(';').slice(0, 2).map(x => (CUISINE[x.trim()] ? t(CUISINE[x.trim()]) : x.trim().replace(/_/g, ' '))).join(', ');

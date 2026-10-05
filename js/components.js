@@ -6,6 +6,7 @@ import { hoursOn, isOpenAt, fmtRanges } from './hours.js';
 import { typeLabel, catEmoji } from './places.js';
 import { showPlaceDetail } from './details.js';
 import { fmtKm } from './util.js';
+import { t } from './i18n.js';
 
 // Yer arama: kullanım kuralı gereği her tuşta değil, "Ara"ya basınca arar.
 export function placeSearch({ placeholder, onPick, autofocus = false }) {
@@ -17,19 +18,19 @@ export function placeSearch({ placeholder, onPick, autofocus = false }) {
       e.preventDefault();
       const q = input.value.trim();
       if (q.length < 2) return;
-      list.replaceChildren(spinner('Aranıyor…'));
+      list.replaceChildren(spinner(t('Aranıyor…')));
       try {
         const rs = await geocode(q);
-        if (!rs.length) { list.replaceChildren(h('p', { class: 'muted small' }, 'Sonuç bulunamadı. Yazımı kontrol et ya da daha genel bir ad dene.')); return; }
+        if (!rs.length) { list.replaceChildren(h('p', { class: 'muted small' }, t('Sonuç bulunamadı. Yazımı kontrol et ya da daha genel bir ad dene.'))); return; }
         list.replaceChildren(...rs.map(r => h('button', {
           type: 'button', class: 'search-item',
           onclick: () => { list.replaceChildren(); input.value = r.name; onPick(r); },
         }, h('b', {}, r.name), h('span', { class: 'muted' }, r.detail))));
       } catch (err) {
-        list.replaceChildren(h('p', { class: 'error' }, `Arama yapılamadı: ${err.message}`));
+        list.replaceChildren(h('p', { class: 'error' }, t('Arama yapılamadı: {e}', { e: err.message })));
       }
     },
-  }, input, h('button', { class: 'btn', type: 'submit' }, 'Ara'));
+  }, input, h('button', { class: 'btn', type: 'submit' }, t('Ara')));
   if (autofocus) requestAnimationFrame(() => input.focus());
   return h('div', { class: 'place-search' }, form, list);
 }
@@ -39,15 +40,15 @@ export function openStatus(p) {
   const now = new Date();
   const r = hoursOn(p.hours, now);
   if (!r.known) return null;
-  if (!r.open) return { cls: 'bad', text: 'Bugün kapalı' };
-  return isOpenAt(p.hours, now) ? { cls: 'ok', text: 'Şu an açık' } : { cls: '', text: `Bugün ${fmtRanges(r.ranges)}` };
+  if (!r.open) return { cls: 'bad', text: t('Bugün kapalı') };
+  return isOpenAt(p.hours, now) ? { cls: 'ok', text: t('Şu an açık') } : { cls: '', text: `${t('Bugün')} ${fmtRanges(r.ranges)}` };
 }
 
 export function placeCard(p, { onAdd } = {}) {
   const st = openStatus(p);
   const notable = p.tags?.wikipedia || p.tags?.wikidata;
   return h('div', { class: 'place-card' },
-    tappable({ class: 'pc-tap', onclick: () => showPlaceDetail(p, { actions: onAdd ? [h('button', { class: 'btn', onclick: onAdd }, '＋ Geziye ekle')] : [] }) },
+    tappable({ class: 'pc-tap', onclick: () => showPlaceDetail(p, { actions: onAdd ? [h('button', { class: 'btn', onclick: onAdd }, '＋ ' + t('Geziye ekle'))] : [] }) },
       h('span', { class: 'emoji', 'aria-hidden': 'true' }, catEmoji(p)),
       h('div', { class: 'pc-main' },
         h('div', { class: 'pc-name' }, p.name),
@@ -55,14 +56,14 @@ export function placeCard(p, { onAdd } = {}) {
           h('span', {}, typeLabel(p)),
           p.dist != null && h('span', {}, fmtKm(p.dist)),
           st && h('span', { class: `badge ${st.cls}` }, st.text),
-          notable && h('span', { class: 'badge star' }, 'Öne çıkan')))),
-    onAdd && h('button', { class: 'icon-btn add', 'aria-label': `${p.name} geziye ekle`, onclick: onAdd }, '+'));
+          notable && h('span', { class: 'badge star' }, t('Öne çıkan'))))),
+    onAdd && h('button', { class: 'icon-btn add', 'aria-label': t('{p}: geziye ekle', { p: p.name }), onclick: onAdd }, '+'));
 }
 
 export function wxPill(w, source) {
   const [icon] = WX(w.code);
   const approx = source === 'archive';
-  return h('span', { class: 'wx', title: approx ? 'Geçen yıl aynı gün' : 'Hava tahmini' },
+  return h('span', { class: 'wx', title: approx ? t('Geçen yıl aynı gün') : t('Hava tahmini') },
     `${approx ? '≈ ' : ''}${icon} ${Math.round(w.tmin)}°/${Math.round(w.tmax)}°`,
-    !approx && w.pop != null && w.pop >= 20 ? ` · %${w.pop}` : '');
+    !approx && w.pop != null && w.pop >= 20 ? ` · ${w.pop}%` : '');
 }

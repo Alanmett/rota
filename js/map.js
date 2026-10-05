@@ -1,17 +1,19 @@
 // Leaflet + OpenStreetMap harita yardımcıları.
 
+import { t } from './i18n.js';
+
 export const DAY_COLORS = ['#0f766e', '#c2410c', '#6d28d9', '#0369a1', '#be123c', '#4d7c0f', '#a16207', '#475569'];
 
 export function createMap(el, center, zoom = 13) {
   if (!window.L) {
     el.classList.add('map-error');
-    el.textContent = 'Harita yüklenemedi. İnternet bağlantını kontrol et.';
+    el.textContent = t('Harita yüklenemedi. İnternet bağlantını kontrol et.');
     return null;
   }
   const map = L.map(el, { zoomControl: true });
   L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', {
     maxZoom: 19,
-    attribution: '© <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> katkıcıları',
+    attribution: '© <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> ' + t('katkıcıları'),
   }).addTo(map);
   if (center) map.setView([center.lat, center.lon], zoom);
   else map.setView([39, 35], 5);
@@ -39,7 +41,7 @@ export function popupFor(p, subtitle, onOpen) {
   if (onOpen) {
     const btn = document.createElement('button');
     btn.className = 'btn small';
-    btn.textContent = 'Detay';
+    btn.textContent = t('Detay');
     btn.addEventListener('click', onOpen);
     el.append(btn);
   }

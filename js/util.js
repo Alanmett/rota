@@ -1,6 +1,9 @@
 // Genel yardımcılar: mesafe, biçimlendirme, tarih.
 
+import { t, locale, getLang } from './i18n.js';
+
 export const toRad = d => d * Math.PI / 180;
+const dec = s => (getLang() === 'en' ? s : s.replace('.', ','));
 
 export function haversineKm(a, b) {
   const R = 6371;
@@ -18,14 +21,14 @@ export function bboxAround(lat, lon, km) {
 export function fmtKm(km) {
   if (km == null) return '';
   if (km < 1) return `${Math.max(10, Math.round(km * 100) * 10)} m`;
-  return `${km < 10 ? km.toFixed(1).replace('.', ',') : Math.round(km)} km`;
+  return `${km < 10 ? dec(km.toFixed(1)) : Math.round(km)} km`;
 }
 
 export function fmtDur(min) {
   min = Math.round(min);
-  if (min < 60) return `${min} dk`;
+  if (min < 60) return t('{m} dk', { m: min });
   const h = Math.floor(min / 60), m = min % 60;
-  return m ? `${h} sa ${m} dk` : `${h} sa`;
+  return m ? t('{h} sa {m} dk', { h, m }) : t('{h} sa', { h });
 }
 
 export function fmtClock(min) {
@@ -36,14 +39,14 @@ export function fmtClock(min) {
 
 // Para birimi kullanıcının yaşadığı ülkeye göre (Ayarlar) değişir.
 let currency = 'CHF';
-let money = new Intl.NumberFormat('tr-TR', { style: 'currency', currency, maximumFractionDigits: 0 });
+let money = new Intl.NumberFormat(locale(), { style: 'currency', currency, maximumFractionDigits: 0 });
 export function setCurrency(code) {
   currency = code;
-  money = new Intl.NumberFormat('tr-TR', { style: 'currency', currency: code, maximumFractionDigits: 0 });
+  money = new Intl.NumberFormat(locale(), { style: 'currency', currency: code, maximumFractionDigits: 0 });
 }
 export const currencySymbol = () => ({ CHF: 'CHF', TRY: '₺', EUR: '€' })[currency] || currency;
 export const fmtMoney = n => money.format(Math.round(n || 0));
-export const fmtNum = n => new Intl.NumberFormat('tr-TR', { maximumFractionDigits: 0 }).format(Math.round(n || 0));
+export const fmtNum = n => new Intl.NumberFormat(locale(), { maximumFractionDigits: 0 }).format(Math.round(n || 0));
 
 export const toISODate = d => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
 export function parseISODate(s) { const [y, m, d] = s.split('-').map(Number); return new Date(y, m - 1, d); }
@@ -56,9 +59,9 @@ export function dateRange(startISO, endISO) {
   return out;
 }
 
-const dfShort = new Intl.DateTimeFormat('tr-TR', { weekday: 'short', day: 'numeric', month: 'short' });
-const dfLong = new Intl.DateTimeFormat('tr-TR', { weekday: 'long', day: 'numeric', month: 'long' });
-const dfDM = new Intl.DateTimeFormat('tr-TR', { day: 'numeric', month: 'short' });
+const dfShort = new Intl.DateTimeFormat(locale(), { weekday: 'short', day: 'numeric', month: 'short' });
+const dfLong = new Intl.DateTimeFormat(locale(), { weekday: 'long', day: 'numeric', month: 'long' });
+const dfDM = new Intl.DateTimeFormat(locale(), { day: 'numeric', month: 'short' });
 export const fmtDay = iso => dfShort.format(parseISODate(iso));
 export const fmtDayLong = iso => dfLong.format(parseISODate(iso));
 export function fmtRange(a, b) {
@@ -70,7 +73,7 @@ export const sleep = ms => new Promise(r => setTimeout(r, ms));
 export const uid = () => Date.now().toString(36) + Math.random().toString(36).slice(2, 7);
 
 export function normName(s) {
-  return (s || '').toLocaleLowerCase('tr').replace(/ı/g, 'i').normalize('NFD')
+  return (s || '').toLocaleLowerCase('tr') // Türkçe I/ı için; diğer dillerde de zararsız.replace(/ı/g, 'i').normalize('NFD')
     .replace(/[̀-ͯ]/g, '').replace(/[^a-z0-9]+/g, ' ').trim();
 }
 

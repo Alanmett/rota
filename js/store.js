@@ -1,11 +1,13 @@
 // Tüm veriler cihazda (localStorage) saklanır. Hesap ya da sunucu yok.
 
+import { t } from './i18n.js';
+
 const K = { trips: 'rota.trips.v1', settings: 'rota.settings.v1', near: 'rota.near.v1' };
 
 // Yaşanılan ülkeye göre başlangıç fiyatları (tahmini; kullanıcı Ayarlar'dan günceller).
 export const COUNTRY_PRESETS = {
   ch: {
-    label: 'İsviçre', currency: 'CHF',
+    label: t('İsviçre'), currency: 'CHF',
     budget: {
       fuelPrice: 1.85,        // / litre
       consumption: 7,         // L / 100 km
@@ -18,7 +20,7 @@ export const COUNTRY_PRESETS = {
     },
   },
   tr: {
-    label: 'Türkiye', currency: 'TRY',
+    label: t('Türkiye'), currency: 'TRY',
     budget: {
       fuelPrice: 60, consumption: 7,
       hotel: { ekonomik: 2000, orta: 4000, konforlu: 8000 },
@@ -31,6 +33,7 @@ export const COUNTRY_PRESETS = {
 export const DEFAULT_SETTINGS = {
   homeCountry: 'ch',
   currency: 'CHF',
+  lang: null,          // null: ilk açılışta otomatik (i18n.js)
   home: null,
   transport: 'araba',
   museumCard: false,   // TR: Müzekart · CH: İsviçre Müze Pasaportu
@@ -58,10 +61,10 @@ export const saveSettings = s => write(K.settings, s);
 const allTrips = () => read(K.trips, {});
 export const listTrips = () => Object.values(allTrips());
 export const getTrip = id => allTrips()[id] || null;
-export function saveTrip(t) {
+export function saveTrip(trip) {
   const all = allTrips();
-  all[t.id] = t;
-  if (!write(K.trips, all)) throw new Error('Gezi kaydedilemedi (cihaz depolaması dolu olabilir).');
+  all[trip.id] = trip;
+  if (!write(K.trips, all)) throw new Error(t('Gezi kaydedilemedi (cihaz depolaması dolu olabilir).'));
 }
 export function deleteTrip(id) { const all = allTrips(); delete all[id]; write(K.trips, all); }
 
@@ -77,7 +80,7 @@ export function exportData() {
 }
 export function importData(text) {
   const d = JSON.parse(text);
-  if (d.app !== 'rota') throw new Error('Bu dosya bir Rota yedeği değil.');
+  if (d.app !== 'rota') throw new Error(t('Bu dosya bir Rota yedeği değil.'));
   write(K.trips, { ...allTrips(), ...(d.trips || {}) });
   if (d.settings) write(K.settings, d.settings);
   return Object.keys(d.trips || {}).length;
