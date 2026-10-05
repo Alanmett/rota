@@ -1,6 +1,6 @@
 // Mekân türleri, OpenStreetMap sorguları, sınıflandırma ve puanlama.
 
-import { overpass, wikidataAround, wikidataSitelinkCounts } from './api.js';
+import { overpass, wikidataAround, wikidataLabels, wikidataSitelinkCounts } from './api.js';
 import { bboxAround, haversineKm, normName } from './util.js';
 
 export const CATS = {
@@ -240,16 +240,24 @@ const GENERIC_NAME = /^(köprü|cami|camii|mescit|kilise|türbe|çeşme|han|hama
 async function fetchWikidataPlaces(lat, lon, radiusKm, sightCats) {
   const want = new Set([...sightCats, 'gezi']);
   const ids = Object.keys(WD_TYPES).filter(q => want.has(WD_TYPES[q][0]) || (WD_TYPES[q][0] === 'dini' && want.has('tarihi')));
-  const rows = await wikidataAround(lat, lon, radiusKm, ids);
-  const byItem = new Map();
-  for (const r of rows) {
-    const [cat, type] = WD_TYPES[r.type];
-    const prev = byItem.get(r.qid);
-    if (prev) { if (GENERIC.has(prev.type) && !GENERIC.has(type)) Object.assign(prev, { type, cat }); continue; }
-    byItem.set(r.qid, { ...r, cat, type });
+  // Geniş alanda yalnızca daha bilinen yerler (aksi halde binlerce küçük kayıt gelir).
+  const minSl = radiusKm <= 15 ? 1 : radiusKm <= 60 ? 3 : 5;
+  const items = await wikidataAround(lat, lon, radiusKm, ids, minSl);
+  const typed = [];
+  for (const it of items) {
+    const mapped = it.types.map(t => WD_TYPES[t]).filter(Boolean);
+    const best = mapped.find(([, type]) => !GENERIC.has(type)) || mapped[0];
+    if (best) typed.push({ ...it, cat: best[0], type: best[1] });
   }
+  // Ad sorgusu yalnızca en önemli 200 yer için
+  typed.sort((a, b) => b.sitelinks - a.sitelinks);
+  const top = typed.slice(0, 200);
+  const labels = await wikidataLabels(top.map(r => r.qid));
   const out = [];
-  for (const r of byItem.values()) {
+  for (const it of top) {
+    const lb = labels.get(it.qid);
+    if (!lb || /^Q\d+$/.test(lb.label)) continue;
+    const r = { ...it, label: lb.label, trTitle: lb.trTitle };
     if (NOISY_NATURE.has(r.type) && !r.trTitle && r.sitelinks < 3) continue;
     if (GENERIC_NAME.test(r.label)) continue; // "Köprü 2", "Cami" gibi adsız kayıtlar
     const cats = [r.cat];
@@ -266,17 +274,37 @@ async function fetchWikidataPlaces(lat, lon, radiusKm, sightCats) {
   return out;
 }
 
-// Wikidata tüm alanı tarar (bilinen yerler); OSM ise merkezin en fazla 10 km çevresini (ayrıntı: saatler,
-// küçük müzeler, seyir noktaları). Ücretsiz OSM sunucusu daha geniş alan sorgularını kaldırmıyor.
-const OSM_SIGHTS_MAX_KM = 10;
+// Kaynak stratejisi (ölçümle belirlendi): Wikidata her mesafede hızlı ve güvenilir (Zürih 10 km: <1 sn).
+// Ücretsiz OSM sunucuları şehir ölçeğinde alan taramasında sık sık zaman aşımına düşüyor; bu yüzden OSM'den
+// alan taraması yalnızca yürüme mesafesinde yapılır, diğer durumlarda sadece nokta atışı sorgular (çalışma saati).
+const OSM_DETAIL_MAX_KM = 3;
+
+// Seçilen yerlerin OSM'deki çalışma saatini, Wikidata kimliğiyle ve çok küçük alanlarda arayarak ekler.
+// Ucuz bir sorgudur; sunucu yanıt vermezse sessizce atlanır.
+export async function enrichHours(places, limit = 60) {
+  const need = places.filter(p => !p.hours && /^Q\d+$/.test(p.tags?.wikidata || '')).slice(0, limit);
+  if (!need.length) return;
+  const parts = need.map(p => `nwr(around:300,${p.lat.toFixed(5)},${p.lon.toFixed(5)})["wikidata"="${p.tags.wikidata}"];`);
+  const data = await overpass(`[out:json][timeout:12];(${parts.join('')});out tags;`, 12000, 1);
+  const byQ = new Map();
+  for (const el of data.elements || []) if (el.tags?.wikidata) byQ.set(el.tags.wikidata, el.tags);
+  for (const p of need) {
+    const t = byQ.get(p.tags.wikidata);
+    if (!t) continue;
+    if (t.opening_hours) p.hours = t.opening_hours;
+    for (const k of ['website', 'contact:website', 'phone', 'fee', 'wheelchair', 'addr:street', 'addr:housenumber', 'addr:city']) {
+      if (t[k] && !p.tags[k]) p.tags[k] = t[k];
+    }
+  }
+}
 
 export async function fetchPlaces({ lat, lon, radiusKm, cats }) {
   const sight = cats.filter(c => SIGHT_CATS.includes(c));
   const food = cats.filter(c => c === 'yemek' || c === 'kafe');
   if (!sight.length && !food.length) return [];
   const parts = [];
-  if (sight.length) {
-    const b = '(' + bboxAround(lat, lon, Math.min(radiusKm, OSM_SIGHTS_MAX_KM)).map(x => x.toFixed(5)).join(',') + ')';
+  if (sight.length && radiusKm <= OSM_DETAIL_MAX_KM) {
+    const b = '(' + bboxAround(lat, lon, radiusKm).map(x => x.toFixed(5)).join(',') + ')';
     for (const c of sight) for (const q of CLAUSES[c]) parts.push(q.replaceAll('{b}', b).replaceAll('{n}', ''));
     parts.push(`nwr["tourism"="attraction"]["name"]${b};`);
   }
@@ -286,7 +314,7 @@ export async function fetchPlaces({ lat, lon, radiusKm, cats }) {
   }
   let osmErr = null, wdErr = null;
   const [osm, wd] = await Promise.all([
-    parts.length ? overpass(query(parts, 1000)).then(d => parseElements(d.elements)).catch(e => { osmErr = e; return []; }) : [],
+    parts.length ? overpass(query(parts, 1000), 20000).then(d => parseElements(d.elements)).catch(e => { osmErr = e; return []; }) : [],
     sight.length ? fetchWikidataPlaces(lat, lon, radiusKm, sight).catch(e => { wdErr = e; return []; }) : [],
   ]);
   if (!osm.length && !wd.length && (osmErr || wdErr)) throw osmErr || wdErr;
@@ -318,7 +346,12 @@ export async function fetchPlaces({ lat, lon, radiusKm, cats }) {
   const list = merged.filter(p => p.cats.some(c => want.has(c)) || p.cats[0] === 'gezi');
   for (const p of list) p.dist = haversineKm(origin, p);
   const result = dedupe(list.filter(p => p.dist <= radiusKm * 1.08));
-  result.partial = !!(osmErr || wdErr); // bir kaynak çöktüyse arayüz bunu söylesin
+  // Wikidata çöktüyse liste eksiktir; OSM'nin çökmesi yalnızca yürüme mesafesinde ayrıntı kaybıdır.
+  result.partial = !!wdErr || (!!osmErr && radiusKm <= OSM_DETAIL_MAX_KM);
+  // Çalışma saatleri arka planda eklenir; çağıran isterse bekler (plan), istemezse listeyi hemen gösterir (Keşfet).
+  result.hoursReady = sight.length
+    ? enrichHours([...result].sort((a, b) => b.score - a.score)).catch(() => {})
+    : Promise.resolve();
   return result;
 }
 
@@ -339,7 +372,7 @@ function foodScore(f) {
 export async function fetchFoodNear(points, radiusM = 800) {
   if (!points.length) return {};
   const parts = points.map(p => `nwr["amenity"="restaurant"]["name"](around:${radiusM},${p.lat.toFixed(5)},${p.lon.toFixed(5)});`);
-  const data = await overpass(query(parts, 400));
+  const data = await overpass(query(parts, 400), 12000, 1);
   const all = dedupe(parseElements(data.elements));
   const res = {};
   for (const p of points) {

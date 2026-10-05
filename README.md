@@ -19,7 +19,15 @@ Telefonda uygulama gibi çalışan (PWA) gezi planlayıcı. Günübirlik ve uzun
 | Hava | Open-Meteo |
 | Yol mesafesi | OSRM |
 
-Ücretsiz OSM sunucusu yoğun saatlerde yavaşlar ve geniş alan sorgularını kaldırmaz. Bu yüzden OSM yalnızca merkezin 10 km çevresinde kullanılır. OSM yanıt vermezse uygulama Wikidata ile devam eder ve bunu kullanıcıya söyler.
+Ölçümlere göre ücretsiz OSM sunucuları şehir ölçeğindeki alan taramalarında sık sık zaman aşımına düşüyor (Zürih 10 km: 30 saniyede yanıt yok). Bu yüzden:
+
+- Yerler her mesafede Wikidata'dan gelir (Zürih 10 km: 1–4 saniye).
+- OSM'den alan taraması yalnızca "Yürüme" (≤3 km) mesafesinde yapılır.
+- Bunun dışında OSM'ye yalnızca küçük, nokta atışı sorgular gider: plandaki yerlerin çalışma saatleri ve yemek molası lokantaları. OSM yanıt vermezse bunlar atlanır, plan yine çıkar.
+
+## Yayın
+
+https://alanmett.github.io/rota/ (GitHub Pages, `main` dalı). Güncellemek için değişiklikleri commit'leyip `git push` yapmak yeterli; site 1–2 dakikada yenilenir.
 
 ## Bilgisayarda çalıştırma
 

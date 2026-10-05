@@ -82,10 +82,13 @@ export function renderNear(root) {
     goBtn.disabled = true;
     results.replaceChildren(spinner(state.radius > 30 ? 'Geniş alanda aranıyor, biraz sürebilir…' : 'Çevrendeki yerler aranıyor…'));
     try {
-      state.results = await fetchPlaces({ lat: state.loc.lat, lon: state.loc.lon, radiusKm: state.radius, cats: state.cats });
+      const found = await fetchPlaces({ lat: state.loc.lat, lon: state.loc.lon, radiusKm: state.radius, cats: state.cats });
+      state.results = found;
       state.showAll = false;
       renderResults();
       results.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      // Çalışma saatleri sonradan gelirse "Şu an açık" bilgisini güncelle
+      found.hoursReady?.then(() => { if (state.results === found && results.isConnected && state.view === 'list') renderResults(); });
     } catch (e) {
       results.replaceChildren(h('p', { class: 'error' }, e.message));
     } finally {
@@ -129,8 +132,8 @@ export function renderNear(root) {
       state.view === 'list' && segmented([{ value: 'rank', label: 'Öne çıkanlar' }, { value: 'near', label: 'En yakın' }], state.sort, v => { state.sort = v; renderResults(); }),
       all.partial && h('div', { class: 'note warn' }, 'Veri kaynaklarından biri şu an yanıt vermedi; liste eksik olabilir. Biraz sonra tekrar aramayı dene.'),
       content,
-      h('p', { class: 'muted small source' }, state.radius > 10
-        ? 'Merkezin 10 km dışında yalnızca Wikipedia\'da maddesi olan, bilinen yerler gösterilir.'
+      h('p', { class: 'muted small source' }, state.radius > 3
+        ? 'Wikipedia\'da maddesi olan, bilinen yerler gösteriliyor. Küçük müzeler ve seyir noktaları için "Yürüme" mesafesini seç.'
         : 'Veriler OpenStreetMap ve Wikidata gönüllülerinden gelir; küçük yerlerde eksik olabilir.'),
     );
   }

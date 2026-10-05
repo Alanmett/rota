@@ -5,7 +5,7 @@ import { fetchPlaces, fetchFoodNear, stripPlace, isSight } from './places.js';
 import { buildItinerary, computeTimeline } from './planner.js';
 import { weatherDaily, driveRoute, countryInfo, wikiForTags, wikiSearch } from './api.js';
 import { saveTrip } from './store.js';
-import { dateRange, uid } from './util.js';
+import { dateRange, uid, sleep } from './util.js';
 
 export async function generateTrip(f, settings, progress = () => {}) {
   const dates = dateRange(f.startDate, f.endDate);
@@ -16,6 +16,12 @@ export async function generateTrip(f, settings, progress = () => {}) {
   }
   const sights = found.filter(isSight);
   if (!sights.length) throw new Error('Bu bölgede seçtiğin ilgi alanlarına uygun yer bulunamadı. Alanı genişletmeyi ya da başka ilgi alanları seçmeyi dene.');
+
+  // Kapalı günleri doğru planlamak için çalışma saatlerini kısa süre bekle (sunucu yavaşsa saatsiz devam).
+  if (found.hoursReady) {
+    progress('Çalışma saatleri kontrol ediliyor…');
+    await Promise.race([found.hoursReady, sleep(6000)]);
+  }
 
   progress('Günler planlanıyor…');
   const plan = buildItinerary(sights, dates, {
@@ -36,24 +42,20 @@ export async function generateTrip(f, settings, progress = () => {}) {
     partial: !!found.partial,
   };
 
-  progress('Yemek molası için yakındaki lokantalar aranıyor…');
-  try { await addFoodSuggestions(trip); } catch (e) { console.warn('yemek', e); }
-
-  progress('Hava durumuna bakılıyor…');
-  try { await refreshWeather(trip); } catch (e) { console.warn('hava', e); }
-
-  if (trip.transport === 'araba' && settings.home && trip.kind !== 'today') {
-    progress('Evden yol mesafesi hesaplanıyor…');
-    try { trip.drive = await driveRoute(settings.home, trip.dest); } catch (e) { console.warn('rota', e); }
-  }
-
-  progress('Gidilecek yer hakkında bilgi toplanıyor…');
-  if (trip.dest.cc && trip.dest.cc !== settings.homeCountry) {
-    try { trip.country = await countryInfo(trip.dest.cc); } catch (e) { console.warn('ülke', e); }
-  }
-  try {
-    trip.destInfo = (await wikiForTags({ wikidata: trip.dest.wikidata, wikipedia: trip.dest.wikipedia })) || (await wikiSearch(trip.dest.name));
-  } catch (e) { console.warn('wiki', e); }
+  // Ek bilgiler birbirinden bağımsız; aynı anda istenir. Biri başarısız olursa gezi yine kaydedilir.
+  progress('Yemek molaları, hava durumu ve yer bilgisi hazırlanıyor…');
+  const soft = (label, fn) => fn().catch(e => console.warn(label, e));
+  await Promise.all([
+    soft('yemek', () => addFoodSuggestions(trip)),
+    soft('hava', () => refreshWeather(trip)),
+    trip.transport === 'araba' && settings.home && trip.kind !== 'today'
+      ? soft('rota', async () => { trip.drive = await driveRoute(settings.home, trip.dest); }) : null,
+    trip.dest.cc && trip.dest.cc !== settings.homeCountry
+      ? soft('ülke', async () => { trip.country = await countryInfo(trip.dest.cc); }) : null,
+    soft('wiki', async () => {
+      trip.destInfo = (await wikiForTags({ wikidata: trip.dest.wikidata, wikipedia: trip.dest.wikipedia })) || (await wikiSearch(trip.dest.name));
+    }),
+  ]);
 
   saveTrip(trip);
   return trip;

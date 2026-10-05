@@ -24,9 +24,9 @@ async function fetchJSON(url, opts = {}, timeout = 20000) {
 // bu yüzden sadece dar alan sorguları gönderilir, uzun beklenmez.
 const OVERPASS = ['https://overpass-api.de/api/interpreter', 'https://overpass.private.coffee/api/interpreter'];
 
-export async function overpass(query, timeout = 25000) {
+export async function overpass(query, timeout = 25000, maxServers = OVERPASS.length) {
   let last;
-  for (const url of OVERPASS) {
+  for (const url of OVERPASS.slice(0, maxServers)) {
     try {
       return await fetchJSON(url, {
         method: 'POST',
@@ -52,31 +52,56 @@ export async function wikidataSitelinkCounts(qids) {
   return new Map(r.results.bindings.map(b => [b.item.value.split('/').pop(), +b.sl.value]));
 }
 
-export async function wikidataAround(lat, lon, radiusKm, typeIds) {
-  const q = `SELECT ?item ?itemLabel ?coord ?type ?sl ?tr ?en WHERE {
+// Yarıçaptaki, istenen türden (ya da onun bir alt türünden: "Protestan kilisesi" → "kilise binası") yerler.
+// Sorgu yapısı ölçülerek seçildi: önce madde sayısıyla eler, ad/etiket işi yapmaz → yoğun şehirde bile 1–4 sn.
+export async function wikidataAround(lat, lon, radiusKm, typeIds, minSitelinks = 1) {
+  const list = typeIds.map(t => 'wd:' + t).join(',');
+  const q = `SELECT DISTINCT ?item ?coord ?sl ?k WHERE {
   SERVICE wikibase:around { ?item wdt:P625 ?coord . bd:serviceParam wikibase:center "Point(${lon.toFixed(5)} ${lat.toFixed(5)})"^^geo:wktLiteral . bd:serviceParam wikibase:radius "${radiusKm}" . }
-  VALUES ?type { ${typeIds.map(t => 'wd:' + t).join(' ')} }
-  ?item wdt:P31 ?type ; wikibase:sitelinks ?sl .
-  FILTER(?sl >= 1)
-  OPTIONAL { ?tr schema:about ?item ; schema:isPartOf <https://tr.wikipedia.org/> . }
-  OPTIONAL { ?en schema:about ?item ; schema:isPartOf <https://en.wikipedia.org/> . }
-  SERVICE wikibase:label { bd:serviceParam wikibase:language "tr,en,de,fr,it". }
-} ORDER BY DESC(?sl) LIMIT 600`;
+  ?item wikibase:sitelinks ?sl . FILTER(?sl >= ${minSitelinks})
+  ?item wdt:P31 ?t . OPTIONAL { ?t wdt:P279 ?super . }
+  FILTER(?t IN (${list}) || ?super IN (${list}))
+  BIND(IF(?t IN (${list}), ?t, ?super) AS ?k)
+} LIMIT 5000`;
   const r = await fetchJSON(`https://query.wikidata.org/sparql?format=json&query=${encodeURIComponent(q)}`, {
     headers: { Accept: 'application/sparql-results+json' },
-  }, 30000);
-  return r.results.bindings.map(b => {
-    const m = b.coord.value.match(/Point\(([-\d.]+) ([-\d.]+)\)/);
-    return {
-      qid: b.item.value.split('/').pop(),
-      label: b.itemLabel.value,
-      lat: m ? +m[2] : null, lon: m ? +m[1] : null,
-      type: b.type.value.split('/').pop(),
-      sitelinks: +b.sl.value,
+  }, 25000);
+  const items = new Map();
+  for (const b of r.results.bindings) {
+    const qid = b.item.value.split('/').pop();
+    let it = items.get(qid);
+    if (!it) {
+      const m = b.coord.value.match(/Point\(([-\d.]+) ([-\d.]+)\)/);
+      if (!m) continue;
+      it = { qid, lat: +m[2], lon: +m[1], sitelinks: +b.sl.value, types: [] };
+      items.set(qid, it);
+    }
+    const k = b.k.value.split('/').pop();
+    if (!it.types.includes(k)) it.types.push(k);
+  }
+  return [...items.values()];
+}
+
+// Seçilen yerlerin adları (Türkçe varsa Türkçe) ve Türkçe Wikipedia maddesi.
+export async function wikidataLabels(qids) {
+  if (!qids.length) return new Map();
+  const q = `SELECT ?item ?label ?tr WHERE {
+  VALUES ?item { ${qids.map(x => 'wd:' + x).join(' ')} }
+  OPTIONAL { ?tr schema:about ?item ; schema:isPartOf <https://tr.wikipedia.org/> . }
+  SERVICE wikibase:label { bd:serviceParam wikibase:language "tr,en,de,fr,it". ?item rdfs:label ?label . }
+}`;
+  const r = await fetchJSON(`https://query.wikidata.org/sparql?format=json&query=${encodeURIComponent(q)}`, {
+    headers: { Accept: 'application/sparql-results+json' },
+  }, 15000);
+  const out = new Map();
+  for (const b of r.results.bindings) {
+    const qid = b.item.value.split('/').pop();
+    out.set(qid, {
+      label: b.label?.value || qid,
       trTitle: b.tr ? decodeURIComponent(b.tr.value.split('/wiki/')[1] || '').replace(/_/g, ' ') : null,
-      hasEn: !!b.en,
-    };
-  }).filter(x => x.lat != null);
+    });
+  }
+  return out;
 }
 
 // ---------- Nominatim (yer arama) ----------
