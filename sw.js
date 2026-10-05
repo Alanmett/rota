@@ -1,7 +1,7 @@
 // Çevrimdışı destek: uygulama dosyaları önbelleğe alınır; gezilen harita parçaları ve
 // açılan Wikipedia özetleri de saklanır. Kayıtlı geziler zaten cihazda (localStorage).
 
-const VERSION = 'rota-v5';
+const VERSION = 'rota-v6';
 const SHELL = [
   './', 'index.html', 'manifest.webmanifest', 'css/app.css', 'data/destinations.json',
   'js/i18n.js', 'js/i18n/en.js', 'js/i18n/fr.js',
@@ -36,11 +36,13 @@ async function trim(cacheName, max) {
 }
 
 // Önce ağ (güncel kalsın), ağ yoksa ya da yavaşsa önbellek.
-async function networkFirst(req, cacheName, timeoutMs) {
+// fresh: tarayıcının HTTP önbelleğini atla ve sunucuya "değişti mi?" diye sor. GitHub Pages dosyaları
+// 10 dk önbelleğe aldırıyor; sormazsak güncellemeden sonra eski ve yeni dosyalar karışabilir.
+async function networkFirst(req, cacheName, timeoutMs, fresh = false) {
   const cache = await caches.open(cacheName);
   try {
     const res = await Promise.race([
-      fetch(req),
+      fresh ? fetch(req.url, { cache: 'no-cache', credentials: 'same-origin' }) : fetch(req),
       new Promise((_, rej) => setTimeout(() => rej(new Error('timeout')), timeoutMs)),
     ]);
     if (res.ok) cache.put(req, res.clone());
@@ -69,7 +71,7 @@ self.addEventListener('fetch', e => {
   const req = e.request;
   if (req.method !== 'GET') return;
   const url = new URL(req.url);
-  if (url.origin === location.origin) { e.respondWith(networkFirst(req, VERSION, 3500)); return; }
+  if (url.origin === location.origin) { e.respondWith(networkFirst(req, VERSION, 3500, true)); return; }
   if (url.hostname === 'cdnjs.cloudflare.com') { e.respondWith(cacheFirst(req, VERSION)); return; }
   if (url.hostname === 'tile.openstreetmap.org') { e.respondWith(cacheFirst(req, TILES, MAX_TILES)); return; }
   if (url.hostname.endsWith('wikipedia.org') || url.hostname === 'www.wikidata.org' || url.hostname === 'upload.wikimedia.org') {
