@@ -68,11 +68,18 @@ export function dateRange(startISO, endISO) {
 const dfShort = new Intl.DateTimeFormat(locale(), { weekday: 'short', day: 'numeric', month: 'short' });
 const dfLong = new Intl.DateTimeFormat(locale(), { weekday: 'long', day: 'numeric', month: 'long' });
 const dfDM = new Intl.DateTimeFormat(locale(), { day: 'numeric', month: 'short' });
+// Avrupa usulü: gün.ay.yıl (Türkçe ve Fransızca 17.10.2026, İngilizce 17/10/2026) ve kısa gün adı
+const dfDMY = new Intl.DateTimeFormat(locale(), { day: '2-digit', month: '2-digit', year: 'numeric' });
+const dfWeekday = new Intl.DateTimeFormat(locale(), { weekday: 'short' });
+export const fmtDMY = iso => dfDMY.format(parseISODate(iso));
+export const fmtWeekday = iso => dfWeekday.format(parseISODate(iso));
 export const fmtDay = iso => dfShort.format(parseISODate(iso));
 export const fmtDayLong = iso => dfLong.format(parseISODate(iso));
 export function fmtRange(a, b) {
-  if (a === b) return dfShort.format(parseISODate(a));
-  return `${dfDM.format(parseISODate(a))} – ${dfDM.format(parseISODate(b))}`;
+  // Bu yıl değilse yıl da yazılır (gün, ay, yıl sırasıyla)
+  const year = parseISODate(b).getFullYear() !== new Date().getFullYear() ? ` ${parseISODate(b).getFullYear()}` : '';
+  if (a === b) return dfShort.format(parseISODate(a)) + year;
+  return `${dfDM.format(parseISODate(a))} – ${dfDM.format(parseISODate(b))}${year}`;
 }
 
 export const sleep = ms => new Promise(r => setTimeout(r, ms));

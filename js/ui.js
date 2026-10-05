@@ -1,6 +1,7 @@
 // Küçük arayüz yardımcıları. Dışarıdan gelen metinler her zaman textContent ile basılır.
 
 import { t } from './i18n.js';
+import { fmtDMY, fmtWeekday } from './util.js';
 
 export function h(tag, attrs, ...kids) {
   const el = document.createElement(tag);
@@ -103,6 +104,25 @@ export function stepper(value, min, max, onChange, label = '') {
     h('button', { type: 'button', 'aria-label': t('{x}: azalt', { x: label }), onclick: () => set(value - 1) }, '−'),
     out,
     h('button', { type: 'button', 'aria-label': t('{x}: artır', { x: label }), onclick: () => set(value + 1) }, '+'));
+}
+
+// Tarih seçici: telefonun kendi takvimi açılır ama seçilen tarih her zaman gün.ay.yıl olarak gösterilir.
+// (Yerleşik tarih kutusunun görünümü cihaz ayarına bağlı ve sayfadan değiştirilemiyor; bu yüzden üstüne
+// görünmez bir yerleşik kutu konur, görünen metni biz yazarız.)
+export function dateField(value, { min, onChange, label }) {
+  const shown = h('span', { class: 'date-shown', 'aria-hidden': 'true' });
+  const input = h('input', { type: 'date', class: 'date-native', value, min, 'aria-label': label });
+  const upd = () => {
+    if (!input.value) { shown.textContent = '—'; return; }
+    shown.replaceChildren(fmtDMY(input.value), h('small', {}, fmtWeekday(input.value)));
+  };
+  input.addEventListener('click', () => { try { input.showPicker(); } catch { /* dokunma yerleşik takvimi açar */ } });
+  input.addEventListener('change', () => { upd(); onChange?.(input.value); });
+  upd();
+  const wrap = h('div', { class: 'date-wrap' }, shown, input);
+  wrap.input = input;
+  wrap.set = v => { input.value = v; upd(); };
+  return wrap;
 }
 
 export const section = (title, ...kids) => h('section', { class: 'form-sec' }, h('h2', { class: 'h-sec' }, title), ...kids);

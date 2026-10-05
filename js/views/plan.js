@@ -1,6 +1,6 @@
 // Planla: belirli bir yere, belirli tarihlerde gezi.
 
-import { h, toast, segmented, chips, stepper, spinner, section, field, row } from '../ui.js';
+import { h, toast, segmented, chips, stepper, spinner, section, row, dateField } from '../ui.js';
 import { CATS, SIGHT_CATS } from '../places.js';
 import { PACES, TRANSPORTS } from '../planner.js';
 import { FOODS, STAYS } from '../budget.js';
@@ -71,16 +71,17 @@ export function renderPlan(root) {
     dur.textContent = n === 1 ? t('Günübirlik gezi') : t('{d} gün, {n} gece', { d: n, n: n - 1 });
     staySec.hidden = n === 1;
   };
-  const end = h('input', {
-    type: 'date', value: form.endDate, min: form.startDate,
-    onchange: e => { form.endDate = e.target.value && e.target.value >= form.startDate ? e.target.value : form.startDate; e.target.value = form.endDate; updDur(); },
+  const end = dateField(form.endDate, {
+    min: form.startDate, label: t('Dönüş'),
+    onChange: v => { form.endDate = v && v >= form.startDate ? v : form.startDate; end.set(form.endDate); updDur(); },
   });
-  const start = h('input', {
-    type: 'date', value: form.startDate, min: todayISO(),
-    onchange: e => {
-      form.startDate = e.target.value || todayISO();
-      if (form.endDate < form.startDate) { form.endDate = form.startDate; end.value = form.endDate; }
-      end.min = form.startDate; updDur();
+  const start = dateField(form.startDate, {
+    min: todayISO(), label: t('Gidiş'),
+    onChange: v => {
+      form.startDate = v || todayISO();
+      start.set(form.startDate);
+      if (form.endDate < form.startDate) { form.endDate = form.startDate; end.set(form.endDate); }
+      end.input.min = form.startDate; updDur();
     },
   });
   const check = (label, key) => h('label', { class: 'check' },
@@ -89,7 +90,9 @@ export function renderPlan(root) {
 
   root.append(
     section(t('Nereye?'), destBox),
-    section(t('Ne zaman?'), h('div', { class: 'two' }, field(t('Gidiş'), start), field(t('Dönüş'), end)), dur),
+    section(t('Ne zaman?'), h('div', { class: 'two' },
+      h('div', { class: 'field' }, h('span', {}, t('Gidiş')), start),
+      h('div', { class: 'field' }, h('span', {}, t('Dönüş')), end)), dur),
     section(t('Kimlerle?'),
       row(t('Yetişkin'), stepper(form.adults, 1, 20, v => { form.adults = v; }, t('Yetişkin'))),
       row(t('Çocuk'), stepper(form.children, 0, 10, v => { form.children = v; }, t('Çocuk'))),
