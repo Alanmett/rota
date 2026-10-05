@@ -1,0 +1,372 @@
+// Mekân türleri, OpenStreetMap sorguları, sınıflandırma ve puanlama.
+
+import { overpass, wikidataAround, wikidataSitelinkCounts } from './api.js';
+import { bboxAround, haversineKm, normName } from './util.js';
+
+export const CATS = {
+  tarihi: { label: 'Tarihi', emoji: '🏛️' },
+  muze: { label: 'Müze', emoji: '🖼️' },
+  dogal: { label: 'Doğa', emoji: '🌲' },
+  manzara: { label: 'Manzara', emoji: '🌄' },
+  dini: { label: 'Dini yapı', emoji: '🕌' },
+  plaj: { label: 'Plaj & koy', emoji: '🏖️' },
+  park: { label: 'Park & bahçe', emoji: '🌳' },
+  aile: { label: 'Aile & eğlence', emoji: '🎡' },
+  yemek: { label: 'Yemek', emoji: '🍽️' },
+  kafe: { label: 'Kafe', emoji: '☕' },
+};
+export const SIGHT_CATS = ['tarihi', 'muze', 'dogal', 'manzara', 'dini', 'plaj', 'park', 'aile'];
+
+// tür: [etiket, ortalama ziyaret süresi (dk), genelde ücretli mi]
+export const TYPES = {
+  museum: ['Müze', 90, true], gallery: ['Sanat galerisi', 45, false],
+  castle: ['Kale', 75, true], fort: ['Tabya / kale', 60, false], ruins: ['Harabe', 60, false],
+  archaeological_site: ['Antik kent / ören yeri', 120, true], monument: ['Anıt', 15, false],
+  memorial: ['Anma yeri', 15, false], city_gate: ['Kent kapısı', 15, false], citywalls: ['Surlar', 30, false],
+  tomb: ['Türbe / anıt mezar', 20, false], aqueduct: ['Su kemeri', 20, false], palace: ['Saray', 120, true],
+  manor: ['Konak', 45, false], caravanserai: ['Kervansaray / han', 40, false], monastery: ['Manastır', 60, true],
+  church: ['Kilise', 30, false], mosque: ['Cami', 30, false], synagogue: ['Sinagog', 30, false],
+  worship: ['İbadethane', 30, false], bridge: ['Tarihi köprü', 15, false], tower: ['Kule', 40, true],
+  clock_tower: ['Saat kulesi', 15, false], madrasa: ['Medrese', 30, false], hammam: ['Tarihi hamam', 30, false],
+  kulliye: ['Külliye', 60, false], bedesten: ['Bedesten / tarihi çarşı', 45, false], old_town: ['Tarihi kent dokusu', 90, false],
+  lighthouse: ['Deniz feneri', 20, false], plateau: ['Yayla', 120, false],
+  historic: ['Tarihi yer', 30, false],
+  waterfall: ['Şelale', 60, false], cave_entrance: ['Mağara', 75, true], gorge: ['Kanyon', 120, true],
+  canyon: ['Kanyon', 120, true], hot_spring: ['Kaplıca / termal', 120, true], spring: ['Kaynak', 30, false],
+  arch: ['Doğal kaya kemeri', 30, false], peak: ['Zirve', 120, false], volcano: ['Volkanik dağ', 120, false],
+  water: ['Göl', 60, false], nature: ['Doğal alan', 60, false],
+  nature_reserve: ['Tabiat parkı / koruma alanı', 120, true], national_park: ['Milli park', 180, true],
+  beach: ['Plaj', 150, false], bay: ['Koy', 120, false], viewpoint: ['Seyir noktası', 25, false],
+  park: ['Park', 45, false], garden: ['Bahçe', 45, false],
+  zoo: ['Hayvanat bahçesi', 150, true], theme_park: ['Tema park', 240, true], aquarium: ['Akvaryum', 90, true],
+  water_park: ['Su parkı', 240, true], attraction: ['Gezilecek yer', 40, false],
+  restaurant: ['Restoran', 60, false], cafe: ['Kafe', 40, false],
+};
+
+const TYPE_EMOJI = {
+  museum: '🏛️', gallery: '🖼️', castle: '🏰', fort: '🏰', ruins: '🏛️', archaeological_site: '🏺',
+  palace: '👑', mosque: '🕌', church: '⛪', synagogue: '🕍', monastery: '⛪', bridge: '🌉', tower: '🗼',
+  clock_tower: '🕰️', madrasa: '🕌', kulliye: '🕌', hammam: '♨️', caravanserai: '🏛️', bedesten: '🛍️', old_town: '🏘️',
+  lighthouse: '🗼', plateau: '⛰️',
+  waterfall: '💧', cave_entrance: '🕳️', gorge: '🏞️', canyon: '🏞️', hot_spring: '♨️', spring: '💧',
+  peak: '⛰️', volcano: '🌋', water: '🏞️', nature_reserve: '🌲', national_park: '🌲',
+  beach: '🏖️', bay: '🏝️', viewpoint: '🌄', park: '🌳', garden: '🌷',
+  zoo: '🦁', theme_park: '🎢', aquarium: '🐠', water_park: '🌊', restaurant: '🍽️', cafe: '☕',
+};
+
+export const typeLabel = p => TYPES[p.type]?.[0] || 'Yer';
+export const catEmoji = p => TYPE_EMOJI[p.type] || CATS[p.cats?.[0]]?.emoji || '📍';
+export const isSight = p => p.cats.some(c => c !== 'yemek' && c !== 'kafe');
+export function isPaid(p) {
+  const f = p.tags?.fee;
+  if (f === 'no') return false;
+  if (f === 'yes' || p.tags?.charge) return true;
+  return !!TYPES[p.type]?.[2];
+}
+export const MUZEKART_TYPES = new Set(['museum', 'archaeological_site', 'palace']);
+
+// {b}: alan filtresi, {n}: geniş aramalarda yalnızca "öne çıkan" (Wikidata kaydı olan) yerler
+const CLAUSES = {
+  tarihi: [
+    'nwr["historic"~"^(castle|fort|ruins|archaeological_site|monument|city_gate|citywalls|tomb|aqueduct|palace|caravanserai|monastery|church|mosque|manor)$"]["name"]{n}{b};',
+    'nwr["historic"]["wikidata"]{b};',
+    'nwr["amenity"="place_of_worship"]["wikipedia"]{b};',
+    'nwr["amenity"="place_of_worship"]["heritage"]{b};',
+  ],
+  muze: ['nwr["tourism"~"^(museum|gallery)$"]["name"]{b};'],
+  dogal: [
+    'nwr["natural"~"^(waterfall|cave_entrance|gorge|canyon|hot_spring|arch|spring)$"]["name"]{b};',
+    'nwr["waterway"="waterfall"]["name"]{b};',
+    'nwr["natural"~"^(peak|volcano|water)$"]["wikidata"]{b};',
+    'nwr["leisure"="nature_reserve"]["name"]{b};',
+    'nwr["boundary"="national_park"]["name"]{b};',
+    'nwr["boundary"="protected_area"]["wikidata"]{b};',
+  ],
+  manzara: ['nwr["tourism"="viewpoint"]["name"]{b};'],
+  dini: [
+    'nwr["amenity"="place_of_worship"]["wikidata"]{b};',
+    'nwr["amenity"="place_of_worship"]["historic"]["name"]{b};',
+  ],
+  plaj: ['nwr["natural"~"^(beach|bay)$"]["name"]{b};', 'nwr["leisure"="beach_resort"]["name"]{b};'],
+  park: [
+    'nwr["leisure"~"^(park|garden)$"]["name"]["wikidata"]{b};',
+    'nwr["leisure"~"^(park|garden)$"]["tourism"="attraction"]["name"]{b};',
+  ],
+  aile: ['nwr["tourism"~"^(zoo|theme_park|aquarium)$"]["name"]{b};', 'nwr["leisure"="water_park"]["name"]{b};'],
+  yemek: ['nwr["amenity"="restaurant"]["name"]{b};'],
+  kafe: ['nwr["amenity"="cafe"]["name"]{b};'],
+};
+
+function classify(t) {
+  const cats = [];
+  const add = c => { if (!cats.includes(c)) cats.push(c); };
+  let type;
+  const rel = t.religion;
+  if (t.amenity === 'restaurant') { add('yemek'); type = 'restaurant'; }
+  else if (t.amenity === 'cafe') { add('kafe'); type = 'cafe'; }
+  else if (t.tourism === 'museum' || t.tourism === 'gallery') { add('muze'); type = t.tourism; }
+  else if (['zoo', 'theme_park', 'aquarium'].includes(t.tourism) || t.leisure === 'water_park') {
+    add('aile'); type = t.leisure === 'water_park' ? 'water_park' : t.tourism;
+  }
+  else if (t.amenity === 'place_of_worship') {
+    add('dini'); type = rel === 'muslim' ? 'mosque' : rel === 'christian' ? 'church' : rel === 'jewish' ? 'synagogue' : 'worship';
+  }
+  else if (t.historic) {
+    add('tarihi'); type = TYPES[t.historic] ? t.historic : 'historic';
+    if (['mosque', 'church', 'monastery', 'synagogue'].includes(t.historic)) add('dini');
+  }
+  else if (t.natural === 'beach' || t.natural === 'bay' || t.leisure === 'beach_resort') { add('plaj'); type = t.natural === 'bay' ? 'bay' : 'beach'; }
+  else if (t.waterway === 'waterfall' || t.natural) { add('dogal'); type = t.waterway === 'waterfall' ? 'waterfall' : (TYPES[t.natural] ? t.natural : 'nature'); }
+  else if (t.boundary === 'national_park') { add('dogal'); type = 'national_park'; }
+  else if (t.leisure === 'nature_reserve' || t.boundary === 'protected_area') { add('dogal'); type = 'nature_reserve'; }
+  else if (t.tourism === 'viewpoint') { add('manzara'); type = 'viewpoint'; }
+  else if (t.leisure === 'park' || t.leisure === 'garden') { add('park'); type = t.leisure; }
+  else { add('gezi'); type = 'attraction'; }
+  if (t.historic || (t.amenity === 'place_of_worship' && (t.wikipedia || t.heritage))) add('tarihi');
+  if (t.tourism === 'viewpoint') add('manzara');
+  return { cats, type };
+}
+
+const TYPE_BOOST = {
+  archaeological_site: 1.5, palace: 1.5, castle: 1, museum: 1.5, waterfall: 1, national_park: 1, gorge: 1, old_town: 1.5,
+  canyon: 1, cave_entrance: 0.8, viewpoint: 0.3, monument: -0.5, memorial: -0.8, tomb: -0.3, worship: -0.5, park: -0.3,
+};
+
+// Önem ölçüsü: bir yerin kaç dilde Wikipedia maddesi olduğu. Her kaynaktan gelen yer bu ortak ölçüyle puanlanır;
+// böylece OSM'de çok ayrıntılı etiketlenmiş küçük bir müze, dünyaca bilinen bir yerin önüne geçmez.
+const popularity = (sitelinks, hasTr) => 2.2 * Math.log(1 + sitelinks) + (hasTr ? 0.5 : 0);
+
+// OSM'nin kendi sinyalleri (koruma statüsü, turistik etiketi vb.); önem puanı ayrıca eklenir.
+function osmBase(t, type) {
+  let s = 1;
+  if (t.heritage) s += 1;
+  if (t.tourism === 'attraction') s += 0.5;
+  if (t.image || t.wikimedia_commons) s += 0.3;
+  if (t.website || t['contact:website']) s += 0.2;
+  if (t.opening_hours) s += 0.2;
+  return s + (TYPE_BOOST[type] || 0);
+}
+// Wikidata sayısı alınamazsa kullanılacak kaba tahmin
+const wikiFallback = t => (t.wikipedia ? 2.5 : 0) + (t.wikidata ? 1 : 0);
+
+const KEEP = ['name', 'name:tr', 'name:en', 'opening_hours', 'website', 'contact:website', 'phone', 'contact:phone',
+  'wikipedia', 'wikidata', 'fee', 'charge', 'cuisine', 'addr:street', 'addr:housenumber', 'addr:district', 'addr:city',
+  'addr:province', 'description', 'description:tr', 'image', 'wikimedia_commons', 'religion', 'historic', 'tourism',
+  'natural', 'amenity', 'leisure', 'ele', 'heritage', 'wheelchair', 'diet:vegetarian'];
+
+function parseElements(elements) {
+  const out = [];
+  for (const el of elements || []) {
+    const t = el.tags || {};
+    const name = t['name:tr'] || t.name;
+    const lat = el.lat ?? el.center?.lat, lon = el.lon ?? el.center?.lon;
+    if (!name || lat == null || lon == null || GENERIC_NAME.test(name)) continue;
+    const { cats, type } = classify(t);
+    const tags = {};
+    for (const k of KEEP) if (t[k] != null) tags[k] = t[k];
+    const base = osmBase(t, type);
+    out.push({
+      id: el.type[0] + el.id, name, lat, lon, cats, type,
+      dur: TYPES[type]?.[1] || 40, score: base + wikiFallback(t), _base: base, hours: t.opening_hours || null, tags,
+    });
+  }
+  return out;
+}
+
+// Türkçe ek farklarını tolere eden ad karşılaştırması: "Cinci Han" ≈ "Cinci Hanı", "Kale" ≈ "Kalesi".
+const tokMatch = (x, y) => x === y || (Math.min(x.length, y.length) >= 3 && (x.startsWith(y) || y.startsWith(x)) && Math.abs(x.length - y.length) <= 3);
+function sameName(a, b) {
+  if (a === b) return true;
+  if ((a.length > 5 && b.includes(a)) || (b.length > 5 && a.includes(b))) return true;
+  const ta = a.split(' '), tb = b.split(' ');
+  return ta.length === tb.length && ta.every((t, i) => tokMatch(t, tb[i]));
+}
+
+// Aynı yerin birden fazla kaydı (nokta + alan, OSM + Wikidata, "X Evi" / "X Müzesi") tek kayda indirilir.
+function dedupe(list) {
+  list.sort((a, b) => b.score - a.score);
+  const kept = [];
+  for (const p of list) {
+    const n = normName(p.name);
+    const first = n.split(' ')[0];
+    const dup = kept.find(k => {
+      const d = haversineKm(k, p);
+      if (d < 0.4 && sameName(k._n, n)) return true;
+      return first.length >= 5 && k._n.split(' ')[0] === first && d < 0.06;
+    });
+    if (dup) {
+      for (const c of p.cats) if (!dup.cats.includes(c)) dup.cats.push(c);
+      if (!dup.hours && p.hours) dup.hours = p.hours; // Wikidata kaydına OSM'deki çalışma saatini taşı
+      dup.tags = { ...p.tags, ...dup.tags };
+      continue;
+    }
+    p._n = n;
+    kept.push(p);
+  }
+  for (const p of kept) delete p._n;
+  return kept;
+}
+
+const query = (parts, limit) =>
+  `[out:json][timeout:25];(${parts.join('')})->.r;node.r;out body ${limit};(way.r;relation.r;);out tags center ${limit};`;
+
+// Wikidata türü → [kategori, bizim tür]. Kimlikler Wikidata'da tek tek doğrulandı.
+const WD_TYPES = {
+  Q33506: ['muze', 'museum'], Q207694: ['muze', 'museum'], Q3329412: ['muze', 'museum'], Q1007870: ['muze', 'gallery'],
+  Q839954: ['tarihi', 'archaeological_site'], Q15661340: ['tarihi', 'archaeological_site'], Q109607: ['tarihi', 'ruins'],
+  Q23413: ['tarihi', 'castle'], Q17715832: ['tarihi', 'castle'], Q57821: ['tarihi', 'fort'], Q1785071: ['tarihi', 'fort'],
+  Q16560: ['tarihi', 'palace'], Q381885: ['tarihi', 'tomb'], Q838159: ['tarihi', 'tomb'], Q162875: ['tarihi', 'tomb'],
+  Q1404229: ['tarihi', 'tomb'], Q12280: ['tarihi', 'bridge'], Q474: ['tarihi', 'aqueduct'], Q4989906: ['tarihi', 'monument'],
+  Q132834: ['tarihi', 'madrasa'], Q28077: ['tarihi', 'hammam'], Q12518: ['tarihi', 'tower'], Q853854: ['tarihi', 'clock_tower'],
+  Q1081138: ['tarihi', 'historic'], Q1802963: ['tarihi', 'manor'], Q1497375: ['tarihi', 'historic'],
+  Q186347: ['tarihi', 'caravanserai'], Q256020: ['tarihi', 'caravanserai'], Q71974: ['tarihi', 'kulliye'],
+  Q829896: ['tarihi', 'bedesten'], Q15243209: ['tarihi', 'old_town'], Q676050: ['tarihi', 'old_town'],
+  Q32815: ['dini', 'mosque'], Q16970: ['dini', 'church'], Q2977: ['dini', 'church'], Q108325: ['dini', 'church'],
+  Q44613: ['dini', 'monastery'], Q34627: ['dini', 'synagogue'],
+  Q34038: ['dogal', 'waterfall'], Q35509: ['dogal', 'cave_entrance'], Q2232001: ['dogal', 'cave_entrance'],
+  Q150784: ['dogal', 'canyon'], Q46169: ['dogal', 'national_park'], Q179049: ['dogal', 'nature_reserve'],
+  Q23397: ['dogal', 'water'], Q8502: ['dogal', 'peak'], Q177380: ['dogal', 'hot_spring'], Q124714: ['dogal', 'spring'],
+  Q75520: ['dogal', 'plateau'],
+  Q6017969: ['manzara', 'viewpoint'], Q1440300: ['manzara', 'viewpoint'], Q39715: ['manzara', 'lighthouse'],
+  Q40080: ['plaj', 'beach'], Q39594: ['plaj', 'bay'], Q22698: ['park', 'park'], Q1107656: ['park', 'garden'],
+  Q43501: ['aile', 'zoo'], Q2416723: ['aile', 'theme_park'], Q2281788: ['aile', 'aquarium'],
+  Q570116: ['gezi', 'attraction'],
+};
+const GENERIC = new Set(['attraction', 'historic', 'bridge']); // birden fazla tür varsa daha özel olan seçilir
+const NOISY_NATURE = new Set(['peak', 'water', 'plateau', 'spring']); // botların ürettiği tek satırlık maddeler çok
+const MINOR_IF_OBSCURE = new Set(['mosque', 'church', 'tomb', 'bridge', 'clock_tower', 'monument', 'park']);
+const GENERIC_NAME = /^(köprü|cami|camii|mescit|kilise|türbe|çeşme|han|hamam|kale|bridge|mosque|church)(\s*\d+)?$/i;
+
+async function fetchWikidataPlaces(lat, lon, radiusKm, sightCats) {
+  const want = new Set([...sightCats, 'gezi']);
+  const ids = Object.keys(WD_TYPES).filter(q => want.has(WD_TYPES[q][0]) || (WD_TYPES[q][0] === 'dini' && want.has('tarihi')));
+  const rows = await wikidataAround(lat, lon, radiusKm, ids);
+  const byItem = new Map();
+  for (const r of rows) {
+    const [cat, type] = WD_TYPES[r.type];
+    const prev = byItem.get(r.qid);
+    if (prev) { if (GENERIC.has(prev.type) && !GENERIC.has(type)) Object.assign(prev, { type, cat }); continue; }
+    byItem.set(r.qid, { ...r, cat, type });
+  }
+  const out = [];
+  for (const r of byItem.values()) {
+    if (NOISY_NATURE.has(r.type) && !r.trTitle && r.sitelinks < 3) continue;
+    if (GENERIC_NAME.test(r.label)) continue; // "Köprü 2", "Cami" gibi adsız kayıtlar
+    const cats = [r.cat];
+    if (r.cat === 'dini') cats.push('tarihi'); // Wikipedia'da maddesi olan cami/kilise çoğunlukla tarihi
+    let s = 1 + popularity(r.sitelinks, !!r.trTitle) + (TYPE_BOOST[r.type] || 0);
+    if (r.type === 'archaeological_site' && r.sitelinks < 3) s -= 2; // görünür kalıntısı olmayan antik yerleşimler
+    if (MINOR_IF_OBSCURE.has(r.type) && r.sitelinks <= 1) s -= 1.2; // tek maddeli mahalle camisi, küçük köprü vb.
+    out.push({
+      id: 'q' + r.qid.slice(1), name: r.label.split(/\s*[,(]/)[0].trim() || r.label, lat: r.lat, lon: r.lon,
+      cats, type: r.type, dur: TYPES[r.type]?.[1] || 40, score: s, hours: null, _sl: r.sitelinks,
+      tags: { wikidata: r.qid, ...(r.trTitle ? { wikipedia: `tr:${r.trTitle}` } : {}) },
+    });
+  }
+  return out;
+}
+
+// Wikidata tüm alanı tarar (bilinen yerler); OSM ise merkezin en fazla 10 km çevresini (ayrıntı: saatler,
+// küçük müzeler, seyir noktaları). Ücretsiz OSM sunucusu daha geniş alan sorgularını kaldırmıyor.
+const OSM_SIGHTS_MAX_KM = 10;
+
+export async function fetchPlaces({ lat, lon, radiusKm, cats }) {
+  const sight = cats.filter(c => SIGHT_CATS.includes(c));
+  const food = cats.filter(c => c === 'yemek' || c === 'kafe');
+  if (!sight.length && !food.length) return [];
+  const parts = [];
+  if (sight.length) {
+    const b = '(' + bboxAround(lat, lon, Math.min(radiusKm, OSM_SIGHTS_MAX_KM)).map(x => x.toFixed(5)).join(',') + ')';
+    for (const c of sight) for (const q of CLAUSES[c]) parts.push(q.replaceAll('{b}', b).replaceAll('{n}', ''));
+    parts.push(`nwr["tourism"="attraction"]["name"]${b};`);
+  }
+  if (food.length) {
+    const a = `(around:${Math.round(Math.min(radiusKm * 1000, 2000))},${lat.toFixed(5)},${lon.toFixed(5)})`;
+    for (const c of food) for (const q of CLAUSES[c]) parts.push(q.replaceAll('{b}', a).replaceAll('{n}', ''));
+  }
+  let osmErr = null, wdErr = null;
+  const [osm, wd] = await Promise.all([
+    parts.length ? overpass(query(parts, 1000)).then(d => parseElements(d.elements)).catch(e => { osmErr = e; return []; }) : [],
+    sight.length ? fetchWikidataPlaces(lat, lon, radiusKm, sight).catch(e => { wdErr = e; return []; }) : [],
+  ]);
+  if (!osm.length && !wd.length && (osmErr || wdErr)) throw osmErr || wdErr;
+
+  // OSM yerlerini ortak önem ölçüsüyle puanla: Wikidata kimliği olanların madde sayısını topluca çek.
+  const sl = new Map(wd.map(w => [w.tags.wikidata, w._sl]));
+  const missing = [...new Set(osm.map(p => p.tags.wikidata).filter(q => q && /^Q\d+$/.test(q) && !sl.has(q)))].slice(0, 250);
+  if (missing.length) {
+    try { for (const [q, n] of await wikidataSitelinkCounts(missing)) sl.set(q, n); } catch { /* kaba tahminle devam */ }
+  }
+  for (const p of osm) {
+    const n = sl.get(p.tags.wikidata);
+    if (n != null) p.score = p._base + popularity(n, (p.tags.wikipedia || '').startsWith('tr:'));
+  }
+
+  // Aynı Wikidata kimliğine sahip OSM kaydı varsa birleştir (OSM'nin saat bilgisi + Wikidata'nın türü/kategorisi).
+  const osmByQ = new Map(osm.filter(p => p.tags.wikidata).map(p => [p.tags.wikidata, p]));
+  const merged = [...osm];
+  for (const w of wd) {
+    const o = osmByQ.get(w.tags.wikidata);
+    if (o) {
+      for (const c of w.cats) if (!o.cats.includes(c)) o.cats.push(c);
+      if (w.tags.wikipedia && !o.tags.wikipedia?.startsWith('tr:')) o.tags.wikipedia = w.tags.wikipedia;
+    } else merged.push(w);
+  }
+
+  const want = new Set(cats);
+  const origin = { lat, lon };
+  const list = merged.filter(p => p.cats.some(c => want.has(c)) || p.cats[0] === 'gezi');
+  for (const p of list) p.dist = haversineKm(origin, p);
+  const result = dedupe(list.filter(p => p.dist <= radiusKm * 1.08));
+  result.partial = !!(osmErr || wdErr); // bir kaynak çöktüyse arayüz bunu söylesin
+  return result;
+}
+
+const LOCAL_CUISINE = /turkish|kebab|regional|local|fish|seafood|pide|kofte|meatball|lahmacun|manti|anatolian|ottoman|homestyle|meyhane|doner|swiss|fondue|raclette|alpine/i;
+function foodScore(f) {
+  const t = f.tags;
+  let s = 0;
+  if (t.cuisine) s += 1;
+  if (LOCAL_CUISINE.test(t.cuisine || '')) s += 1;
+  if (t.wikidata) s += 2;
+  if (t.opening_hours) s += 0.3;
+  if (t.website || t['contact:website']) s += 0.3;
+  if (/lokanta|ocakbaşı|kebap|pide|köfte|balık|ev yemek/i.test(f.name)) s += 0.5;
+  return s;
+}
+
+// Her nokta (öğle/akşam molası yeri) için yakındaki en uygun 3 restoran.
+export async function fetchFoodNear(points, radiusM = 800) {
+  if (!points.length) return {};
+  const parts = points.map(p => `nwr["amenity"="restaurant"]["name"](around:${radiusM},${p.lat.toFixed(5)},${p.lon.toFixed(5)});`);
+  const data = await overpass(query(parts, 400));
+  const all = dedupe(parseElements(data.elements));
+  const res = {};
+  for (const p of points) {
+    res[p.key] = all
+      .map(f => ({ f, d: haversineKm(p, f) }))
+      .filter(x => x.d <= radiusM / 1000 * 1.1)
+      .map(x => ({ f: x.f, s: foodScore(x.f) - x.d * 2 }))
+      .sort((a, b) => b.s - a.s)
+      .slice(0, 3)
+      .map(x => x.f);
+  }
+  return res;
+}
+
+export const stripPlace = p => ({
+  id: p.id, name: p.name, lat: p.lat, lon: p.lon, cats: p.cats, type: p.type, dur: p.dur,
+  score: Math.round(p.score * 10) / 10, hours: p.hours, tags: p.tags,
+});
+
+const CUISINE = {
+  turkish: 'Türk mutfağı', kebab: 'Kebap', regional: 'Yöresel', local: 'Yöresel', fish: 'Balık', seafood: 'Deniz ürünleri',
+  pizza: 'Pizza', burger: 'Burger', italian: 'İtalyan', chinese: 'Çin', japanese: 'Japon', sushi: 'Suşi',
+  steak_house: 'Et lokantası', meat: 'Et', grill: 'Izgara', vegetarian: 'Vejetaryen', vegan: 'Vegan', pide: 'Pide',
+  lahmacun: 'Lahmacun', kofte: 'Köfte', meatball: 'Köfte', international: 'Dünya mutfağı', breakfast: 'Kahvaltı',
+  dessert: 'Tatlı', ice_cream: 'Dondurma', sandwich: 'Sandviç', chicken: 'Tavuk', mediterranean: 'Akdeniz',
+  greek: 'Yunan', indian: 'Hint', mexican: 'Meksika', french: 'Fransız', asian: 'Asya', doner: 'Döner',
+  homestyle: 'Ev yemekleri', coffee_shop: 'Kahve', manti: 'Mantı', swiss: 'İsviçre mutfağı', fondue: 'Fondü',
+  german: 'Alman', austrian: 'Avusturya', spanish: 'İspanyol', thai: 'Tay', vietnamese: 'Vietnam',
+};
+export const cuisineLabel = c => (c || '').split(';').slice(0, 2).map(x => CUISINE[x.trim()] || x.trim().replace(/_/g, ' ')).join(', ');

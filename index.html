@@ -1,0 +1,38 @@
+<!doctype html>
+<html lang="tr">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <title>Rota</title>
+  <meta name="description" content="Günübirlik ve uzun geziler için kişisel gezi planlayıcı">
+  <meta name="theme-color" content="#0f766e">
+  <link rel="manifest" href="manifest.webmanifest">
+  <link rel="icon" href="icons/icon.svg" type="image/svg+xml">
+  <link rel="apple-touch-icon" href="icons/icon-192.png">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-title" content="Rota">
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css">
+  <link rel="stylesheet" href="css/app.css">
+</head>
+<body>
+  <header class="topbar">
+    <h1 id="page-title">Rota</h1>
+    <span id="net-status" class="net" hidden>Çevrimdışı</span>
+  </header>
+
+  <main id="view"></main>
+
+  <nav class="tabbar" aria-label="Ana menü">
+    <a href="#/kesfet" data-tab="kesfet"><span aria-hidden="true">🧭</span>Keşfet</a>
+    <a href="#/planla" data-tab="planla"><span aria-hidden="true">🗺️</span>Planla</a>
+    <a href="#/geziler" data-tab="geziler"><span aria-hidden="true">🎒</span>Gezilerim</a>
+    <a href="#/ayarlar" data-tab="ayarlar"><span aria-hidden="true">⚙️</span>Ayarlar</a>
+  </nav>
+
+  <dialog id="sheet" class="sheet" aria-label="Ayrıntılar"><div class="sheet-body" id="sheet-body"></div></dialog>
+  <div id="toast" role="status" aria-live="polite"></div>
+
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
+  <script type="module" src="js/app.js"></script>
+</body>
+</html>
