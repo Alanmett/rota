@@ -6,6 +6,7 @@ import { hoursOn, isOpenAt, fmtRanges } from './hours.js';
 import { typeLabel, catEmoji } from './places.js';
 import { showPlaceDetail } from './details.js';
 import { fmtKm } from './util.js';
+import { getSettings } from './store.js';
 import { t } from './i18n.js';
 
 // Yer arama: kullanım kuralı gereği her tuşta değil, "Ara"ya basınca arar.
@@ -48,7 +49,7 @@ export function placeCard(p, { onAdd } = {}) {
   const st = openStatus(p);
   const notable = p.tags?.wikipedia || p.tags?.wikidata;
   return h('div', { class: 'place-card' },
-    tappable({ class: 'pc-tap', onclick: () => showPlaceDetail(p, { actions: onAdd ? [h('button', { class: 'btn', onclick: onAdd }, '＋ ' + t('Geziye ekle'))] : [] }) },
+    tappable({ class: 'pc-tap', onclick: () => showPlaceDetail(p, { actions: onAdd ? [h('button', { class: 'btn', onclick: onAdd }, '＋ ' + t('Geziye ekle'))] : [], parking: getSettings().transport === 'araba' }) },
       h('span', { class: 'emoji', 'aria-hidden': 'true' }, catEmoji(p)),
       h('div', { class: 'pc-main' },
         h('div', { class: 'pc-name' }, p.name),

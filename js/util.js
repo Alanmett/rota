@@ -39,13 +39,19 @@ export function fmtClock(min) {
 
 // Para birimi kullanıcının yaşadığı ülkeye göre (Ayarlar) değişir.
 let currency = 'CHF';
-let money = new Intl.NumberFormat(locale(), { style: 'currency', currency, maximumFractionDigits: 0 });
+const fmtFor = (code, digits) => new Intl.NumberFormat(locale(), { style: 'currency', currency: code, minimumFractionDigits: digits, maximumFractionDigits: digits });
+let money = fmtFor(currency, 0), moneyFine = fmtFor(currency, 2);
 export function setCurrency(code) {
   currency = code;
-  money = new Intl.NumberFormat(locale(), { style: 'currency', currency: code, maximumFractionDigits: 0 });
+  money = fmtFor(code, 0);
+  moneyFine = fmtFor(code, 2);
 }
 export const currencySymbol = () => ({ CHF: 'CHF', TRY: '₺', EUR: '€' })[currency] || currency;
-export const fmtMoney = n => money.format(Math.round(n || 0));
+// Küçük ve küsuratlı tutarlar (ör. benzin 1,85/L) kuruşuyla, diğerleri yuvarlanarak
+export function fmtMoney(n) {
+  const v = n || 0;
+  return Math.abs(v) < 20 && Math.abs(v - Math.round(v)) >= 0.005 ? moneyFine.format(v) : money.format(Math.round(v));
+}
 export const fmtNum = n => new Intl.NumberFormat(locale(), { maximumFractionDigits: 0 }).format(Math.round(n || 0));
 
 export const toISODate = d => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;

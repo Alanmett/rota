@@ -3,16 +3,16 @@
 import { h, fill, toast, openSheet, closeSheet, setTitle, onLeave, linkBtn, emptyState, tappable } from '../ui.js';
 import { getTrip, saveTrip, deleteTrip, getSettings } from '../store.js';
 import { computeTimeline, gmapsDayLink, gmapsDir, bestInsertIndex, PACES, TRANSPORTS, LEG_EMOJI } from '../planner.js';
-import { computeBudget } from '../budget.js';
+import { computeBudget, STAYS, stayOf, FOODS, foodOf, savingTips, factorNote } from '../budget.js';
 import { buildTips } from '../tips.js';
-import { refreshWeather } from '../tripgen.js';
+import { refreshWeather, addParking } from '../tripgen.js';
 import { typeLabel, catEmoji, cuisineLabel } from '../places.js';
-import { showPlaceDetail, wikiMoreLabel } from '../details.js';
+import { showPlaceDetail, wikiMoreLabel, parkLink } from '../details.js';
 import { wxPill } from '../components.js';
 import { createMap, numIcon, emojiIcon, meIcon, popupFor, DAY_COLORS } from '../map.js';
 import { WX } from '../api.js';
 import { fmtDur, fmtKm, fmtClock, fmtMoney, fmtNum, fmtDay, fmtDayLong, fmtRange, todayISO, currencySymbol } from '../util.js';
-import { t, getLang } from '../i18n.js';
+import { t, getLang, locale } from '../i18n.js';
 
 const TABS = [['plan', t('Plan')], ['harita', t('Harita')], ['butce', t('Bütçe')], ['bilgi', t('Bilgiler')]];
 const color = di => DAY_COLORS[di % DAY_COLORS.length];
@@ -31,7 +31,10 @@ export function renderTrip(root, id, tab) {
   const ctx = {
     trip, settings: getSettings(), body,
     save() { trip.updatedAt = Date.now(); saveTrip(trip); },
-    rerender() { const y = window.scrollY; body.replaceChildren(); render(body, ctx); window.scrollTo(0, y); },
+    rerender() {
+      const y = window.scrollY; body.replaceChildren(); render(body, ctx); window.scrollTo(0, y);
+      if (tab === 'plan') maybeAddParking(ctx);
+    },
   };
   root.append(
     tripHeader(trip),
@@ -41,6 +44,18 @@ export function renderTrip(root, id, tab) {
   );
   render(body, ctx);
   if (tab !== 'harita') maybeRefreshWeather(ctx);
+  if (tab === 'plan' || tab === 'harita') maybeAddParking(ctx, tab === 'plan');
+}
+
+// Plan değiştiyse (durak eklendi/taşındı) otoparkı henüz aranmamış duraklar için arar.
+async function maybeAddParking(ctx, rerender = true) {
+  if (ctx.trip.transport !== 'araba' || !navigator.onLine) return;
+  try {
+    if (await addParking(ctx.trip)) {
+      ctx.save();
+      if (rerender && ctx.body.isConnected) ctx.rerender();
+    }
+  } catch { /* otoparksız devam */ }
 }
 
 async function maybeRefreshWeather(ctx) {
@@ -104,6 +119,7 @@ function dayCard(ctx, di) {
       list.append(mealItem(t('Öğle yemeği'), it.start, day.lunch));
     } else {
       n++;
+      if (it.parkHere) { const pk = parkingItem(trip, it.id); if (pk) list.append(pk); }
       list.append(stopItem(ctx, di, day.stops.indexOf(it.id), it, n));
     }
   }
@@ -133,6 +149,15 @@ function stopItem(ctx, di, si, it, n) {
       h('div', { class: 'tl-meta' }, `${catEmoji(p)} ${typeLabel(p)} · ~${fmtDur(p.dur)}`),
       it.warn.map(w => h('div', { class: 'tl-warn' }, `⚠️ ${w}`))),
     h('button', { class: 'icon-btn', 'aria-label': t('{p}: seçenekler', { p: p.name }), onclick: () => stopMenu(ctx, di, si) }, '⋯'));
+}
+
+// Arabayla varılan duraktan önce: nereye park edilecek
+function parkingItem(trip, id) {
+  const lots = trip.parking?.[id];
+  if (lots === undefined) return null; // henüz aranmadı; arka planda aranıyor
+  return h('li', { class: 'tl-park' }, h('span', { class: 'line' }),
+    h('div', { class: 'park-box' },
+      lots.length ? lots.map(parkLink) : h('span', { class: 'muted small' }, '🅿️ ' + t('Yakında kayıtlı otopark bulunamadı'))));
 }
 
 function mealItem(label, start, options) {
@@ -249,6 +274,13 @@ function renderMapTab(body, ctx) {
         for (const f of [...(d.lunch || []).slice(0, 2), ...(d.dinner || []).slice(0, 2)]) {
           L.marker([f.lat, f.lon], { icon: emojiIcon('🍽️') }).bindPopup(popupFor(f, t('Yemek önerisi'), () => showPlaceDetail(f))).addTo(layer);
         }
+        for (const id of d.stops) {
+          for (const l of (trip.parking?.[id] || []).slice(0, 1)) {
+            const el = document.createElement('div');
+            el.append(parkLink(l));
+            L.marker([l.lat, l.lon], { icon: emojiIcon('🅿️') }).bindPopup(el).addTo(layer);
+          }
+        }
       }
     });
     if (trip.origin && (filter === 'all' || filter === 0)) {
@@ -275,21 +307,41 @@ function renderBudgetTab(body, ctx) {
   const { trip, settings } = ctx;
   const b = computeBudget(trip, settings);
   const people = trip.travelers.adults + (trip.travelers.children || 0);
+  const nights = trip.days.length - 1;
+  const stay = stayOf(trip);
+  const country = trip.dest.cc ? new Intl.DisplayNames([locale()], { type: 'region' }).of(trip.dest.cc.toUpperCase()) : '';
+  const note = trip.dest.cc ? factorNote(trip, settings, country) : null;
+  const tips = savingTips(trip, settings);
   fill(body,
     h('section', { class: 'card total-card' },
       h('div', { class: 'muted small' }, t('Tahmini toplam')),
       h('div', { class: 'big' }, fmtMoney(b.total)),
       h('div', { class: 'muted small' }, t('Kişi başı yaklaşık {p} · {n} kişi', { p: fmtMoney(b.perPerson), n: people }))),
+    nights > 0 && h('section', { class: 'card' },
+      h('h2', { class: 'h-sec' }, t('Nerede kalacaksın?')),
+      h('div', { class: 'chips' }, Object.entries(STAYS).map(([k, s]) => h('button', {
+        type: 'button', class: 'chip' + (stay === k ? ' on' : ''), 'aria-pressed': String(stay === k),
+        onclick: () => { trip.stay = k; delete trip.budgetOverrides.hotel; ctx.save(); ctx.rerender(); },
+      }, s.label)))),
+    h('section', { class: 'card' },
+      h('h2', { class: 'h-sec' }, t('Yemekler nasıl olsun?')),
+      h('div', { class: 'chips' }, Object.entries(FOODS).map(([k, x]) => h('button', {
+        type: 'button', class: 'chip' + (foodOf(trip) === k ? ' on' : ''), 'aria-pressed': String(foodOf(trip) === k),
+        onclick: () => { trip.level = k; delete trip.budgetOverrides.food; ctx.save(); ctx.rerender(); },
+      }, x.label)))),
     !settings.pricesReviewed && h('div', { class: 'note warn' },
       t('Fiyatlar varsayılan değerlerle hesaplandı. Doğru sonuç için Ayarlar sekmesinden benzin, konaklama ve yemek fiyatlarını kendine göre güncelle.'), ' ',
       h('a', { href: '#/ayarlar' }, t('Ayarlar') + ' →')),
-    trip.dest.cc && trip.dest.cc !== settings.homeCountry && h('div', { class: 'note' }, t('Fiyatlar yaşadığın ülkeye göre ayarlı; başka ülkede fiyatlar çok farklı olabilir. Kalemleri elle düzenlemeni öneririm.')),
+    note && h('div', { class: 'note' }, note),
     h('section', { class: 'card budget-lines' },
       b.lines.map(l => budgetLine(l, ctx)),
       h('div', { class: 'budget-row' },
         h('div', {}, h('div', { class: 'bl-label' }, t('Beklenmedik giderler')), h('div', { class: 'muted small' }, t('Ara toplamın %{p} kadarı', { p: settings.budget.bufferPct }))),
         h('b', { class: 'money-fixed' }, fmtMoney(b.buffer)))),
     h('p', { class: 'muted small' }, t('Tutarlara dokunup değiştirebilirsin; değişiklik sadece bu geziye kaydedilir. Gezi sırasındaki harcama takibi sonraki sürümde gelecek.')),
+    tips.length > 0 && h('section', {},
+      h('h2', { class: 'h-sec' }, t('Tasarruf için')),
+      tips.map(x => h('div', { class: 'tip' }, h('span', { class: 'tip-icon', 'aria-hidden': 'true' }, '💡'), h('p', {}, x)))),
   );
 }
 

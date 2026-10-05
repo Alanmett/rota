@@ -28,19 +28,33 @@ async function fetchJSON(url, opts = {}, timeout = 20000) {
 // bu yüzden sadece dar alan sorguları gönderilir, uzun beklenmez.
 const OVERPASS = ['https://overpass-api.de/api/interpreter', 'https://overpass.private.coffee/api/interpreter'];
 
-export async function overpass(query, timeout = 25000, maxServers = OVERPASS.length) {
+// Sorgular sıraya konur (aynı anda tek sorgu): saat, lokanta ve otopark sorguları birlikte gidince
+// sunucu üçüncüsünü "çok fazla istek" (429) diye reddediyordu.
+let overpassQueue = Promise.resolve();
+export function overpass(query, timeout = 25000, maxServers = OVERPASS.length) {
+  const run = overpassQueue.then(() => overpassNow(query, timeout, maxServers));
+  overpassQueue = run.catch(() => {});
+  return run;
+}
+
+async function overpassNow(query, timeout, maxServers) {
   let last;
   for (const url of OVERPASS.slice(0, maxServers)) {
-    try {
-      return await fetchJSON(url, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-        body: 'data=' + encodeURIComponent(query),
-      }, timeout);
-    } catch (e) {
-      last = e;
-      if (e.offline) break;
+    for (let attempt = 0; attempt < 2; attempt++) {
+      try {
+        return await fetchJSON(url, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+          body: 'data=' + encodeURIComponent(query),
+        }, timeout);
+      } catch (e) {
+        last = e;
+        if (e.offline) break;
+        if (e.status === 429 && attempt === 0) { await sleep(4000); continue; } // yer açılmasını bekle, bir kez daha dene
+        break;
+      }
     }
+    if (last?.offline) break;
   }
   throw new Error(t('Harita verisi sunucusuna ulaşılamadı ({err}). Biraz sonra tekrar dene.', { err: last?.message || t('bilinmeyen hata') }));
 }
@@ -147,6 +161,16 @@ export async function reverseGeocode(lat, lon, zoom = 14) {
   const u = `${NOM}/reverse?format=jsonv2&addressdetails=1&extratags=1&zoom=${zoom}&accept-language=${getLang()}&lat=${lat}&lon=${lon}`;
   const r = await fetchJSON(u);
   return r && !r.error ? normPlace(r) : null;
+}
+
+// Bir noktanın çevresindeki belirli türden yerler (ör. "parking", "restaurant"), ayrıntı etiketleriyle.
+// Overpass'e göre çok daha güvenilir ve hızlı (ölçüm: ~0,4 sn); kullanım kuralı gereği saniyede en fazla 1 istek.
+export async function nominatimNearby(what, lat, lon, radiusM, limit = 20) {
+  await nomThrottle();
+  const dLat = radiusM / 111320, dLon = radiusM / (111320 * Math.cos(lat * Math.PI / 180));
+  const vb = [lon - dLon, lat + dLat, lon + dLon, lat - dLat].map(x => x.toFixed(5)).join(',');
+  const u = `${NOM}/search?format=jsonv2&q=${encodeURIComponent(what)}&viewbox=${vb}&bounded=1&extratags=1&limit=${limit}&accept-language=${getLang()}`;
+  return fetchJSON(u, {}, 10000);
 }
 
 export function defaultRadiusFor(kind) {

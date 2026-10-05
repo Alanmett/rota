@@ -3,7 +3,7 @@
 import { h, toast, segmented, chips, stepper, spinner, section, field, row } from '../ui.js';
 import { CATS, SIGHT_CATS } from '../places.js';
 import { PACES, TRANSPORTS } from '../planner.js';
-import { LEVELS } from '../budget.js';
+import { FOODS, STAYS } from '../budget.js';
 import { getSettings } from '../store.js';
 import { generateTrip } from '../tripgen.js';
 import { placeSearch } from '../components.js';
@@ -21,7 +21,7 @@ const SCOPES = [
 let form = null; // sekmeler arası geçişte doldurulan bilgiler kaybolmasın
 const initForm = () => ({
   dest: null, startDate: todayISO(), endDate: todayISO(), adults: 2, children: 0, elderly: false, pet: false,
-  transport: getSettings().transport, interests: ['tarihi', 'muze', 'dogal', 'manzara'], pace: 'normal', level: 'orta', radiusKm: 15,
+  transport: getSettings().transport, interests: ['tarihi', 'muze', 'dogal', 'manzara'], pace: 'normal', level: 'ekonomik', radiusKm: 15, stay: 'ekonomik',
 });
 
 // Öner ekranından gelen yerle formu önceden doldurur.
@@ -35,6 +35,8 @@ export function renderPlan(root) {
   const destBox = h('div');
   const scopeBox = h('div');
   const dur = h('p', { class: 'muted small' });
+  const staySec = h('div');
+  const foodBox = h('div');
   const out = h('div', { 'aria-live': 'polite' });
 
   const renderScope = () => scopeBox.replaceChildren(segmented(SCOPES, form.radiusKm, v => { form.radiusKm = v; }));
@@ -67,6 +69,7 @@ export function renderPlan(root) {
   const updDur = () => {
     const n = dateRange(form.startDate, form.endDate).length;
     dur.textContent = n === 1 ? t('Günübirlik gezi') : t('{d} gün, {n} gece', { d: n, n: n - 1 });
+    staySec.hidden = n === 1;
   };
   const end = h('input', {
     type: 'date', value: form.endDate, min: form.startDate,
@@ -96,12 +99,22 @@ export function renderPlan(root) {
     section(t('Neler ilgini çeker?'), chips(SIGHT_CATS.map(c => ({ value: c, ...CATS[c] })), form.interests, v => { form.interests = v; }),
       h('p', { class: 'muted small' }, t('Öğle ve akşam yemeği önerileri otomatik eklenir.'))),
     section(t('Tempo'), segmented(Object.entries(PACES).map(([value, p]) => ({ value, label: p.label, sub: p.sub })), form.pace, v => { form.pace = v; })),
-    section(t('Bütçe seviyesi'), segmented(Object.entries(LEVELS).map(([value, label]) => ({ value, label })), form.level, v => { form.level = v; })),
+    staySec,
+    section(t('Yemekler nasıl olsun?'), foodBox),
     section(t('Ne kadar geniş bir alan?'), scopeBox, h('p', { class: 'muted small' }, t('Arabayla çevreyi gezeceksen geniş, şehir içinde kalacaksan dar alan seç.'))),
     submit,
     out,
   );
-  renderDest(); renderScope(); updDur();
+  const renderStay = () => staySec.replaceChildren(section(t('Nerede kalacaksın?'),
+    h('div', { class: 'chips' }, Object.entries(STAYS).map(([k, s]) => h('button', {
+      type: 'button', class: 'chip' + (form.stay === k ? ' on' : ''), 'aria-pressed': String(form.stay === k),
+      onclick: () => { form.stay = k; renderStay(); },
+    }, s.label)))));
+  const renderFood = () => foodBox.replaceChildren(h('div', { class: 'chips' }, Object.entries(FOODS).map(([k, x]) => h('button', {
+    type: 'button', class: 'chip' + (form.level === k ? ' on' : ''), 'aria-pressed': String(form.level === k),
+    onclick: () => { form.level = k; renderFood(); },
+  }, x.label))));
+  renderDest(); renderScope(); renderStay(); renderFood(); updDur();
 
   async function go() {
     if (!form.dest) { toast(t('Önce nereye gideceğini seç.')); return; }
@@ -116,7 +129,7 @@ export function renderPlan(root) {
         kind: 'plan', name: n === 1 ? t('{p} günübirlik', { p: form.dest.name }) : t('{p} gezisi', { p: form.dest.name }), dest: form.dest,
         startDate: form.startDate, endDate: form.endDate,
         travelers: { adults: form.adults, children: form.children, elderly: form.elderly, pet: form.pet },
-        transport: form.transport, pace: form.pace, level: form.level, radiusKm: form.radiusKm, interests: form.interests,
+        transport: form.transport, pace: form.pace, level: form.level, stay: form.stay, radiusKm: form.radiusKm, interests: form.interests,
       }, getSettings(), msg => out.replaceChildren(spinner(msg)));
       form = null;
       location.hash = `#/gezi/${trip.id}`;

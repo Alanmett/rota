@@ -167,7 +167,7 @@ export function renderNear(root) {
     L.marker([state.loc.lat, state.loc.lon], { icon: meIcon() }).addTo(map).bindPopup(state.loc.gps ? t('Buradasın') : state.loc.label);
     for (const p of list.slice(0, 150)) {
       L.marker([p.lat, p.lon], { icon: emojiIcon(catEmoji(p)) }).addTo(map)
-        .bindPopup(popupFor(p, null, () => showPlaceDetail(p, { actions: [h('button', { class: 'btn', onclick: () => addToTripSheet(p) }, '＋ ' + t('Geziye ekle'))] })));
+        .bindPopup(popupFor(p, null, () => showPlaceDetail(p, { actions: [h('button', { class: 'btn', onclick: () => addToTripSheet(p) }, '＋ ' + t('Geziye ekle'))], parking: getSettings().transport === 'araba' })));
       bounds.push([p.lat, p.lon]);
     }
     map.fitBounds(bounds, { padding: [24, 24], maxZoom: 15 });
@@ -202,7 +202,7 @@ export function renderNear(root) {
           origin: state.loc.gps ? { lat: state.loc.lat, lon: state.loc.lon } : null,
           startDate: todayISO(), endDate: todayISO(),
           travelers: { adults, children, elderly: false, pet: false },
-          transport, pace, level: 'orta', radiusKm: state.radius, interests: state.cats,
+          transport, pace, level: 'ekonomik', radiusKm: state.radius, interests: state.cats,
           places: state.results, startMin, firstDayBudget: Math.max(90, Math.min(PACES[pace].budget, left)),
         }, settings, msg => body.replaceChildren(spinner(msg)));
         closeSheet();

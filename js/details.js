@@ -3,7 +3,7 @@
 import { h, fill, openSheet, closeSheet, toast, linkBtn } from './ui.js';
 import { wikiForTags } from './api.js';
 import { hoursOn, isOpenAt, fmtRanges } from './hours.js';
-import { typeLabel, catEmoji, cuisineLabel, stripPlace } from './places.js';
+import { typeLabel, catEmoji, cuisineLabel, stripPlace, fetchParkingNear, PARKING_LABEL } from './places.js';
 import { gmapsDir, gmapsSearch, bestInsertIndex } from './planner.js';
 import { listTrips, saveTrip } from './store.js';
 import { fmtKm, fmtDay, fmtDayLong, fmtRange, todayISO, parseISODate, safeUrl } from './util.js';
@@ -31,7 +31,21 @@ function editLink(p) {
 
 export const wikiMoreLabel = w => t("Wikipedia'da devamı") + (w.lang !== getLang() ? ` (${w.lang.toUpperCase()})` : '') + ' →';
 
-export function showPlaceDetail(p, { date, actions = [] } = {}) {
+// Otopark satırı: dokununca yol tarifi doğrudan otoparka verilir.
+export function parkLink(l) {
+  const walk = Math.max(1, Math.round(l.dist * 1.3 / 4.5 * 60));
+  const bits = [
+    l.name ? PARKING_LABEL[l.kind] : null,
+    t('{m} dk yürüme', { m: walk }),
+    l.fee === 'yes' ? t('ücretli') : l.fee === 'no' ? t('ücretsiz') : null,
+    l.capacity ? t('{n} araçlık', { n: l.capacity }) : null,
+  ].filter(Boolean);
+  return h('a', { class: 'park', href: gmapsDir(l), target: '_blank', rel: 'noopener' },
+    h('b', {}, '🅿️ ' + (l.name || PARKING_LABEL[l.kind])),
+    h('span', { class: 'muted' }, bits.join(' · ')));
+}
+
+export function showPlaceDetail(p, { date, actions = [], parking = false } = {}) {
   const tg = p.tags || {};
   const info = h('div', { class: 'wiki' }, h('p', { class: 'muted small' }, t('Bilgi yükleniyor…')));
   const web = safeUrl(tg.website || tg['contact:website']);
@@ -48,6 +62,7 @@ export function showPlaceDetail(p, { date, actions = [] } = {}) {
     phone && ['📞', h('a', { href: `tel:${phone.split(';')[0].replace(/[^\d+]/g, '')}` }, phone.split(';')[0])],
     web && ['🔗', h('a', { href: web, target: '_blank', rel: 'noopener' }, t('Resmi site'))],
   ].filter(Boolean);
+  const park = parking ? h('div', { class: 'park-box' }, h('p', { class: 'muted small' }, t('Otoparklar aranıyor…'))) : null;
 
   openSheet(h('div', { class: 'detail' },
     h('div', { class: 'detail-head' },
@@ -55,12 +70,22 @@ export function showPlaceDetail(p, { date, actions = [] } = {}) {
       h('div', {}, h('h2', {}, p.name), h('div', { class: 'muted small' }, typeLabel(p), p.dist != null ? ' · ' + t('{d} uzakta', { d: fmtKm(p.dist) }) : ''))),
     info,
     h('ul', { class: 'facts' }, facts.map(([i, txt]) => h('li', {}, h('span', { 'aria-hidden': 'true' }, i), h('span', {}, txt)))),
+    park,
     h('div', { class: 'btn-row' },
       linkBtn('🧭 ' + t('Yol tarifi'), gmapsDir(p), 'btn primary'),
       linkBtn('⭐ ' + t('Google yorumları'), gmapsSearch(p)),
       ...actions),
     h('p', { class: 'muted small source' }, t('Bilgi yanlış ya da eksikse') + ' ', editLink(p), '.'),
   ));
+
+  if (park) {
+    fetchParkingNear([{ key: 'p', lat: p.lat, lon: p.lon }], 700).then(r => {
+      if (!park.isConnected) return;
+      const lots = r.p || [];
+      fill(park, h('h3', { class: 'h-sub' }, t('Yakındaki otoparklar')),
+        lots.length ? lots.map(parkLink) : h('p', { class: 'muted small' }, t('Yakında kayıtlı otopark bulunamadı')));
+    }).catch(() => park.replaceChildren());
+  }
 
   wikiForTags({ wikidata: tg.wikidata, wikipedia: tg.wikipedia }).then(w => {
     if (!info.isConnected) return;

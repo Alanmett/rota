@@ -11,8 +11,9 @@ export const COUNTRY_PRESETS = {
     budget: {
       fuelPrice: 1.85,        // / litre
       consumption: 7,         // L / 100 km
-      hotel: { ekonomik: 120, orta: 200, konforlu: 350 },   // oda / gece
-      food: { ekonomik: 45, orta: 85, konforlu: 150 },      // kişi / gün
+      // konaklama / gece: kamp ve hostel kişi başı, diğerleri oda başı
+      stay: { kamp: 20, hostel: 45, ekonomik: 100, orta: 180, konforlu: 320 },
+      food: { piknik: 15, ekonomik: 30, orta: 65, konforlu: 130 },  // kişi / gün
       ticketAvg: 15,          // ücretli yer başına, yetişkin
       transitPerPersonDay: 35,
       parkingPerDay: 20,
@@ -23,8 +24,8 @@ export const COUNTRY_PRESETS = {
     label: t('Türkiye'), currency: 'TRY',
     budget: {
       fuelPrice: 60, consumption: 7,
-      hotel: { ekonomik: 2000, orta: 4000, konforlu: 8000 },
-      food: { ekonomik: 700, orta: 1400, konforlu: 2800 },
+      stay: { kamp: 250, hostel: 500, ekonomik: 1500, orta: 3000, konforlu: 6000 },
+      food: { piknik: 300, ekonomik: 600, orta: 1300, konforlu: 2600 },
       ticketAvg: 400, transitPerPersonDay: 250, parkingPerDay: 150, bufferPct: 10,
     },
   },
@@ -55,7 +56,20 @@ function merge(def, val) {
   return out;
 }
 
-export const getSettings = () => merge(DEFAULT_SETTINGS, read(K.settings, null));
+export function getSettings() {
+  const saved = read(K.settings, null);
+  if (!saved) return structuredClone(DEFAULT_SETTINGS);
+  // Varsayılan fiyatlar yaşanılan ülkenin (para biriminin) hazır değerlerinden gelir
+  const preset = Object.values(COUNTRY_PRESETS).find(p => p.currency === saved.currency) || COUNTRY_PRESETS.ch;
+  // Kullanıcı fiyatlara hiç dokunmadıysa her zaman güncel varsayılanlar (eski sürümün pahalı değerleri kalmasın)
+  if (!saved.pricesReviewed) delete saved.budget;
+  // Eski sürüm yalnız otel fiyatı tutuyordu: kullanıcının girdiği değerleri yeni yapıya taşı
+  if (saved.budget?.hotel && !saved.budget.stay) {
+    saved.budget.stay = { ...saved.budget.hotel };
+    delete saved.budget.hotel;
+  }
+  return merge({ ...DEFAULT_SETTINGS, budget: structuredClone(preset.budget) }, saved);
+}
 export const saveSettings = s => write(K.settings, s);
 
 const allTrips = () => read(K.trips, {});

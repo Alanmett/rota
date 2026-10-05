@@ -1,6 +1,6 @@
 // Mekân türleri, OpenStreetMap sorguları, sınıflandırma ve puanlama.
 
-import { overpass, wikidataAround, wikidataLabels, wikidataSitelinkCounts } from './api.js';
+import { overpass, wikidataAround, wikidataLabels, wikidataSitelinkCounts, nominatimNearby } from './api.js';
 import { bboxAround, haversineKm, normName } from './util.js';
 import { t, getLang } from './i18n.js';
 
@@ -370,21 +370,82 @@ function foodScore(f) {
   return s;
 }
 
+// Nominatim sonucunu uygulamadaki yer biçimine çevirir (lokanta önerileri için)
+function nomToPlace(r) {
+  const ex = r.extratags || {};
+  const tags = { name: r.name };
+  for (const k of ['cuisine', 'opening_hours', 'website', 'contact:website', 'phone', 'wikidata', 'diet:vegetarian']) if (ex[k]) tags[k] = ex[k];
+  return {
+    id: (r.osm_type || 'n')[0] + r.osm_id, name: r.name, lat: +r.lat, lon: +r.lon,
+    cats: ['yemek'], type: 'restaurant', dur: 60, score: 0, hours: ex.opening_hours || null, tags,
+  };
+}
+
 // Her nokta (öğle/akşam molası yeri) için yakındaki en uygun 3 restoran.
+// Kaynak Nominatim: ölçümlerde Overpass sık sık zaman aşımına düştü, Nominatim ~0,4 sn'de yanıt verdi.
+// Bir nokta başarısız olursa o nokta sonuçta yer almaz (sonra yeniden denenebilir).
 export async function fetchFoodNear(points, radiusM = 800) {
-  if (!points.length) return {};
-  const parts = points.map(p => `nwr["amenity"="restaurant"]["name"](around:${radiusM},${p.lat.toFixed(5)},${p.lon.toFixed(5)});`);
-  const data = await overpass(query(parts, 400), 12000, 1);
-  const all = dedupe(parseElements(data.elements));
   const res = {};
   for (const p of points) {
-    res[p.key] = all
-      .map(f => ({ f, d: haversineKm(p, f) }))
-      .filter(x => x.d <= radiusM / 1000 * 1.1)
-      .map(x => ({ f: x.f, s: foodScore(x.f) - x.d * 2 }))
-      .sort((a, b) => b.s - a.s)
-      .slice(0, 3)
-      .map(x => x.f);
+    try {
+      const rows = (await nominatimNearby('restaurant', p.lat, p.lon, radiusM, 25))
+        .filter(r => r.category === 'amenity' && r.type === 'restaurant' && r.name);
+      res[p.key] = rows.map(nomToPlace)
+        .map(f => ({ f, d: haversineKm(p, f) }))
+        .filter(x => x.d <= radiusM / 1000 * 1.2)
+        .map(x => ({ f: x.f, s: foodScore(x.f) - x.d * 2 }))
+        .sort((a, b) => b.s - a.s)
+        .slice(0, 3)
+        .map(x => x.f);
+    } catch { /* bu nokta atlanır */ }
+  }
+  return res;
+}
+
+// ---------- Otoparklar ----------
+// Herkese açık otoparklar; özel, müşteriye özel ve izinli olanlar elenir.
+// Kapalı otopark ve Park+Ride önde, sokak kenarı en sonda; kapasite ve yakınlık da hesaba katılır.
+const CLOSED_ACCESS = new Set(['private', 'customers', 'no', 'delivery', 'permit', 'residents', 'employees']);
+
+function parkingKind(tg) {
+  if (tg.park_ride && tg.park_ride !== 'no') return 'pr';
+  if (tg.parking === 'multi-storey' || tg.parking === 'underground' || tg.parking === 'rooftop') return 'garage';
+  if (tg.parking === 'street_side' || tg.parking === 'lane' || tg.parking === 'layby') return 'street';
+  return 'surface';
+}
+const PARK_BASE = { garage: 2, pr: 2.5, surface: 1, street: 0.2 };
+export const PARKING_LABEL = { garage: t('Kapalı otopark'), pr: 'Park+Ride', surface: t('Açık otopark'), street: t('Yol kenarı park') };
+
+export async function fetchParkingNear(points, radiusM = 600) {
+  const res = {};
+  for (const p of points) {
+    try {
+      const rows = (await nominatimNearby('parking', p.lat, p.lon, radiusM, 25))
+        .filter(r => r.category === 'amenity' && r.type === 'parking');
+      const lots = [];
+      for (const r of rows) {
+        const tg = { ...(r.extratags || {}), name: r.name || r.extratags?.operator || null };
+        if (CLOSED_ACCESS.has(tg.access)) continue;
+        if (tg.name && /^\d+$/.test(tg.name)) tg.name = null; // "911" gibi anlamsız adlar
+        // Şirket otoparkları (… AG, GmbH, SA) çoğunlukla çalışanlara ait; ücret bilgisi yoksa geri planda kalsın
+        const company = tg.name && /\b(AG|GmbH|SA|Sàrl|S\.p\.A\.|Srl|Ltd)\b/.test(tg.name) && !tg.fee;
+        const kind = parkingKind(tg);
+        const cap = parseInt(tg.capacity, 10);
+        lots.push({
+          id: (r.osm_type || 'n')[0] + r.osm_id, lat: +r.lat, lon: +r.lon, kind, name: tg.name || null,
+          fee: tg.fee === 'yes' ? 'yes' : tg.fee === 'no' ? 'no' : null,
+          capacity: Number.isFinite(cap) ? cap : null,
+          base: PARK_BASE[kind] + (tg.name ? 0.5 : 0) + (Number.isFinite(cap) ? Math.min(cap, 500) / 250 : 0) - (company ? 2 : 0),
+        });
+      }
+      res[p.key] = lots
+        .map(l => ({ l, d: haversineKm(p, l) }))
+        .filter(x => x.d <= radiusM / 1000 * 1.2 && (x.l.kind !== 'street' || x.l.name))
+        .map(x => ({ ...x.l, dist: x.d, s: x.l.base - x.d * 3 }))
+        .sort((a, b) => b.s - a.s)
+        .slice(0, 2)
+        .map(({ s, base, ...rest }) => rest);
+    } catch { /* bu nokta atlanır; bir sonraki açılışta yeniden aranır */ }
   }
   return res;
 }

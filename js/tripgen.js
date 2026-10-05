@@ -1,8 +1,8 @@
 // Formdaki bilgilerden gezi oluşturur: yerleri bulur, günlere dağıtır, yemek molası,
 // hava, yol mesafesi ve gidilecek yer bilgisini ekler, cihaza kaydeder.
 
-import { fetchPlaces, fetchFoodNear, stripPlace, isSight } from './places.js';
-import { buildItinerary, computeTimeline } from './planner.js';
+import { fetchPlaces, fetchFoodNear, fetchParkingNear, stripPlace, isSight } from './places.js';
+import { buildItinerary, computeTimeline, parkingStops } from './planner.js';
 import { weatherDaily, driveRoute, countryInfo, wikiForTags, wikiSearch } from './api.js';
 import { saveTrip } from './store.js';
 import { dateRange, uid, sleep } from './util.js';
@@ -36,7 +36,7 @@ export async function generateTrip(f, settings, progress = () => {}) {
   const trip = {
     id: uid(), kind: f.kind || 'plan', name: f.name, createdAt: Date.now(), updatedAt: Date.now(),
     dest: f.dest, origin: f.origin || null, startDate: dates[0], endDate: dates[dates.length - 1],
-    travelers: f.travelers, transport: f.transport, pace: f.pace, level: f.level,
+    travelers: f.travelers, transport: f.transport, pace: f.pace, level: f.level, stay: f.stay || 'ekonomik',
     radiusKm: f.radiusKm, interests: f.interests,
     places, days: plan.days.map(d => ({ ...d, lunch: [], dinner: [] })), alternatives: plan.alternatives,
     weather: null, drive: null, country: null, destInfo: null, budgetOverrides: {},
@@ -48,6 +48,7 @@ export async function generateTrip(f, settings, progress = () => {}) {
   const soft = (label, fn) => fn().catch(e => console.warn(label, e));
   await Promise.all([
     soft('yemek', () => addFoodSuggestions(trip)),
+    soft('otopark', () => addParking(trip)),
     soft('hava', () => refreshWeather(trip)),
     trip.transport === 'araba' && settings.home && trip.kind !== 'today'
       ? soft('rota', async () => { trip.drive = await driveRoute(settings.home, trip.dest); }) : null,
@@ -81,6 +82,18 @@ export async function addFoodSuggestions(trip) {
     d.lunch = (res[`${di}:lunch`] || []).map(stripPlace);
     d.dinner = (res[`${di}:dinner`] || []).map(stripPlace);
   });
+}
+
+// Arabayla varılan duraklar için yakındaki otoparklar; daha önce aranmış duraklar tekrar aranmaz.
+// Sonuç boş olsa bile [] olarak saklanır ki her açılışta yeniden sorulmasın.
+export async function addParking(trip) {
+  trip.parking ||= {};
+  const need = parkingStops(trip).filter(id => !(id in trip.parking));
+  if (!need.length) return false;
+  const res = await fetchParkingNear(need.map(id => ({ key: id, lat: trip.places[id].lat, lon: trip.places[id].lon })));
+  let changed = false;
+  for (const id of need) if (res[id]) { trip.parking[id] = res[id]; changed = true; } // başarısız olanlar sonra yeniden aranır
+  return changed;
 }
 
 export async function refreshWeather(trip) {

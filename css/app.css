@@ -301,6 +301,12 @@ dialog.sheet::backdrop { background: rgb(0 0 0 / .45); }
 .tl-leg .line { grid-column: 2; justify-self: center; width: 0; height: 100%; min-height: 26px; border-left: 2px dashed var(--line); }
 .tl-leg .txt { grid-column: 3; align-self: center; color: var(--muted); font-size: .78rem; }
 .meal-opts { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 6px; }
+.tl-park .line { grid-column: 2; justify-self: center; width: 0; height: 100%; min-height: 26px; border-left: 2px dashed var(--line); }
+.tl-park .park-box { grid-column: 3 / span 2; padding: 2px 0 8px; }
+.park-box { display: grid; gap: 6px; }
+.park { display: flex; flex-direction: column; gap: 1px; padding: 7px 10px; border-radius: 10px; background: var(--surface-2); color: var(--text); font-size: .84rem; text-decoration: none; }
+.park b { font-weight: 600; }
+.leaflet-popup-content .park { background: #f1eee8; color: #1d1b18; }
 .day-foot { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px; padding: 10px 16px 14px; border-top: 1px solid var(--line); color: var(--muted); font-size: .82rem; }
 
 .alt-row { display: flex; align-items: center; gap: 12px; margin-top: 8px; padding: 10px 12px; border-radius: 14px; background: var(--surface); }

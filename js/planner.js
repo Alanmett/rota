@@ -135,6 +135,14 @@ export function bestInsertIndex(stops, p, places) {
 }
 
 // Saat saat akış: yol süreleri, öğle yemeği arası, açılış/kapanış uyarıları.
+// Arabalı gezide park yeri gereken durakların kimlikleri (otopark aramak için).
+export function parkingStops(trip) {
+  if (trip.transport !== 'araba') return [];
+  const ids = [];
+  trip.days.forEach((_, di) => { for (const it of computeTimeline(trip, di).items) if (it.kind === 'stop' && it.parkHere) ids.push(it.id); });
+  return ids;
+}
+
 export function computeTimeline(trip, di) {
   const day = trip.days[di];
   const date = parseISODate(day.date);
@@ -159,7 +167,10 @@ export function computeTimeline(trip, di) {
         warn.push(!r ? t('Bu saatte kapalı olabilir') : start < r[0] ? t('Açılış {x}', { x: fmtClock(r[0]) }) : t('Kapanış {x}, vakit dar', { x: fmtClock(r[1]) }));
       }
     }
-    items.push({ kind: 'stop', id, place: p, start, end, warn });
+    // Arabayla varılan durak (günün ilki ya da araba gerektiren bir yolun sonu) → park yeri gerekir.
+    // Yürüme mesafesindeki sonraki duraklar için araba aynı yerde kalır.
+    const parkHere = trip.transport === 'araba' && (lg ? lg.mode === 'car' : true);
+    items.push({ kind: 'stop', id, place: p, start, end, warn, parkHere });
     t = end; visitMin += p.dur; prev = p;
   }
   if (!lunchDone && day.stops.length && t >= 11 * 60 + 30 && t <= 15 * 60) lunch();
