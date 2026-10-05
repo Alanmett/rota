@@ -1,8 +1,8 @@
 // Ücretsiz, anahtar gerektirmeyen veri kaynakları:
-// OpenStreetMap (Overpass, Nominatim), Wikipedia/Wikidata, Open-Meteo, OSRM, REST Countries.
+// OpenStreetMap (Overpass, Nominatim), Wikipedia/Wikidata, Open-Meteo, OSRM, frankfurter (döviz).
 
 import { sleep, toISODate, parseISODate } from './util.js';
-import { t, getLang } from './i18n.js';
+import { t, getLang, locale } from './i18n.js';
 
 // Kullanıcının dili önce, sonra yaygın diller (yer adları ve Wikipedia için)
 const langChain = () => [...new Set([getLang(), 'en', 'de', 'fr', 'it', 'tr'])];
@@ -320,17 +320,46 @@ export async function driveRoute(a, b) {
   return rt ? { km: rt.distance / 1000, min: rt.duration / 60 } : null;
 }
 
-// ---------- REST Countries (yurt dışı bilgileri) ----------
+// ---------- Ülke bilgisi (yurt dışı gezileri için; Wikidata, anahtarsız) ----------
+// Eskiden REST Countries kullanılıyordu; servis 2026'da eski sürümlerini kapattı ve yenisi API anahtarı istiyor.
+// Ülke ve para birimi adları tarayıcının kendi çevirisinden (Intl), başkent ve diller Wikidata'dan gelir.
+const PHONE = { ch: '+41', li: '+423', it: '+39', va: '+39', sm: '+378', fr: '+33', mc: '+377', de: '+49', at: '+43', tr: '+90',
+  es: '+34', pt: '+351', nl: '+31', be: '+32', lu: '+352', cz: '+420', si: '+386', hr: '+385', gr: '+30', gb: '+44',
+  hu: '+36', pl: '+48', dk: '+45' };
+const RIGHT_HAND = 'Q14565199'; // Wikidata: sağdan akan trafik
+
 export async function countryInfo(cc) {
-  const r = await fetchJSON(`https://restcountries.com/v3.1/alpha/${encodeURIComponent(cc)}?fields=name,translations,currencies,languages,car,idd,region,capital`, {}, 12000);
-  const c = Array.isArray(r) ? r[0] : r;
+  const code = cc.toUpperCase();
+  const q = `SELECT ?capitalLabel ?curCode ?langLabel ?side ?idd ?europe WHERE {
+  ?c wdt:P297 "${code.replace(/[^A-Z]/g, '')}" .
+  OPTIONAL { ?c wdt:P36 ?capital . }
+  OPTIONAL { ?c wdt:P38 ?cur . ?cur wdt:P498 ?curCode . }
+  OPTIONAL { ?c wdt:P37 ?lang . }
+  OPTIONAL { ?c wdt:P1622 ?side . }
+  OPTIONAL { ?c wdt:P474 ?idd . }
+  BIND(EXISTS { ?c wdt:P30 wd:Q46 } AS ?europe)
+  SERVICE wikibase:label { bd:serviceParam wikibase:language "${langChain().join(',')}". }
+}`;
+  const r = await fetchJSON(`https://query.wikidata.org/sparql?format=json&query=${encodeURIComponent(q)}`, {
+    headers: { Accept: 'application/sparql-results+json' },
+  }, 12000);
+  const rows = r.results.bindings;
+  if (!rows.length) throw new Error('ülke bulunamadı');
+  const uniq = key => [...new Set(rows.map(b => b[key]?.value).filter(Boolean))];
+  const curNames = new Intl.DisplayNames([locale()], { type: 'currency' });
+  const symbol = c => { try { return new Intl.NumberFormat(locale(), { style: 'currency', currency: c }).formatToParts(0).find(p => p.type === 'currency')?.value; } catch { return null; } };
+  const idds = uniq('idd');
+  const side = uniq('side')[0];
   return {
-    name: c.translations?.[{ tr: 'tur', fr: 'fra' }[getLang()]]?.common || c.name?.common || cc.toUpperCase(),
-    currencies: Object.entries(c.currencies || {}).map(([code, v]) => `${v.name} (${code}${v.symbol ? ', ' + v.symbol : ''})`),
-    languages: Object.values(c.languages || {}),
-    driveSide: c.car?.side || null,
-    idd: (c.idd?.root || '') + (c.idd?.suffixes?.length === 1 ? c.idd.suffixes[0] : ''),
-    region: c.region || '',
-    capital: c.capital?.[0] || '',
+    name: new Intl.DisplayNames([locale()], { type: 'region' }).of(code) || code,
+    currencies: uniq('curCode').filter(c => /^[A-Z]{3}$/.test(c)).map(c => {
+      const s = symbol(c);
+      return `${curNames.of(c)} (${c}${s && s !== c ? ', ' + s : ''})`;
+    }),
+    languages: uniq('langLabel').filter(l => !/^Q\d+$/.test(l)),
+    driveSide: side ? (side.endsWith(RIGHT_HAND) ? 'right' : 'left') : null,
+    idd: PHONE[cc] || (idds.length === 1 ? idds[0] : ''),
+    region: uniq('europe')[0] === 'true' ? 'Europe' : '',
+    capital: uniq('capitalLabel')[0] || '',
   };
 }

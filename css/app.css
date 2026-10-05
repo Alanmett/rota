@@ -320,6 +320,12 @@ dialog.sheet::backdrop { background: rgb(0 0 0 / .45); }
 .danger-zone { display: flex; justify-content: center; gap: 8px; padding-top: 8px; }
 
 .total-card .big { font-size: 2rem; font-weight: 800; letter-spacing: -.02em; }
+.cost-card { display: block; margin-bottom: 14px; color: var(--text); text-decoration: none; }
+.cost-head { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
+.cost-total { font-size: 1.6rem; font-weight: 800; letter-spacing: -.02em; }
+.cost-parts { margin-top: 6px; line-height: 1.5; }
+.cost-more { margin-top: 8px; color: var(--primary); font-weight: 650; }
+.day-cost { font-weight: 650; color: var(--text); }
 .budget-row { display: flex; justify-content: space-between; align-items: center; gap: 12px; padding: 12px 0; border-bottom: 1px solid var(--line); }
 .budget-row:last-child { border-bottom: 0; }
 .bl-label { font-weight: 650; }

@@ -13,10 +13,13 @@ export const CATS = {
   plaj: { label: t('Plaj & koy'), emoji: '🏖️' },
   park: { label: t('Park & bahçe'), emoji: '🌳' },
   aile: { label: t('Aile & eğlence'), emoji: '🎡' },
+  alisveris: { label: t('Alışveriş'), emoji: '🛍️' },
   yemek: { label: t('Yemek'), emoji: '🍽️' },
   kafe: { label: t('Kafe'), emoji: '☕' },
 };
-export const SIGHT_CATS = ['tarihi', 'muze', 'dogal', 'manzara', 'dini', 'plaj', 'park', 'aile'];
+export const SIGHT_CATS = ['tarihi', 'muze', 'dogal', 'manzara', 'dini', 'plaj', 'park', 'aile', 'alisveris'];
+// Alışveriş yeri mi (tarihi çarşı gibi hem tarihi hem alışveriş olan yerler gezilecek yer sayılır)
+export const isShop = p => p.cats[0] === 'alisveris';
 
 // tür: [etiket, ortalama ziyaret süresi (dk), genelde ücretli mi]
 export const TYPES = {
@@ -41,6 +44,9 @@ export const TYPES = {
   park: ['Park', 45, false], garden: ['Bahçe', 45, false],
   zoo: ['Hayvanat bahçesi', 150, true], theme_park: ['Tema park', 240, true], aquarium: ['Akvaryum', 90, true],
   water_park: ['Su parkı', 240, true], attraction: ['Gezilecek yer', 40, false],
+  outlet: ['Outlet', 150, false], mall: ['Alışveriş merkezi', 90, false], department_store: ['Büyük mağaza', 60, false],
+  market: ['Pazar yeri', 45, false], market_hall: ['Kapalı çarşı / hal', 45, false], bazaar: ['Çarşı', 60, false],
+  flea_market: ['Bit pazarı', 60, false], shopping_street: ['Alışveriş caddesi', 60, false],
   restaurant: ['Restoran', 60, false], cafe: ['Kafe', 40, false],
 };
 
@@ -53,6 +59,8 @@ const TYPE_EMOJI = {
   peak: '⛰️', volcano: '🌋', water: '🏞️', nature_reserve: '🌲', national_park: '🌲',
   beach: '🏖️', bay: '🏝️', viewpoint: '🌄', park: '🌳', garden: '🌷',
   zoo: '🦁', theme_park: '🎢', aquarium: '🐠', water_park: '🌊', restaurant: '🍽️', cafe: '☕',
+  outlet: '🛍️', mall: '🏬', department_store: '🏬', market: '🧺', market_hall: '🧺', bazaar: '🛍️', flea_market: '🧺',
+  shopping_street: '🛍️',
 };
 
 export const typeLabel = p => t(TYPES[p.type]?.[0] || 'Yer');
@@ -94,6 +102,7 @@ const CLAUSES = {
     'nwr["leisure"~"^(park|garden)$"]["tourism"="attraction"]["name"]{b};',
   ],
   aile: ['nwr["tourism"~"^(zoo|theme_park|aquarium)$"]["name"]{b};', 'nwr["leisure"="water_park"]["name"]{b};'],
+  alisveris: [], // her mesafede Nominatim'den (fetchShopping)
   yemek: ['nwr["amenity"="restaurant"]["name"]{b};'],
   kafe: ['nwr["amenity"="cafe"]["name"]{b};'],
 };
@@ -105,6 +114,9 @@ function classify(t) {
   const rel = t.religion;
   if (t.amenity === 'restaurant') { add('yemek'); type = 'restaurant'; }
   else if (t.amenity === 'cafe') { add('kafe'); type = 'cafe'; }
+  else if (t.shop === 'mall') { add('alisveris'); type = OUTLET_NAME.test(t.name || '') ? 'outlet' : 'mall'; }
+  else if (t.shop === 'department_store') { add('alisveris'); type = 'department_store'; }
+  else if (t.amenity === 'marketplace') { add('alisveris'); type = 'market'; }
   else if (t.tourism === 'museum' || t.tourism === 'gallery') { add('muze'); type = t.tourism; }
   else if (['zoo', 'theme_park', 'aquarium'].includes(t.tourism) || t.leisure === 'water_park') {
     add('aile'); type = t.leisure === 'water_park' ? 'water_park' : t.tourism;
@@ -232,6 +244,9 @@ const WD_TYPES = {
   Q6017969: ['manzara', 'viewpoint'], Q1440300: ['manzara', 'viewpoint'], Q39715: ['manzara', 'lighthouse'],
   Q40080: ['plaj', 'beach'], Q39594: ['plaj', 'bay'], Q22698: ['park', 'park'], Q1107656: ['park', 'garden'],
   Q43501: ['aile', 'zoo'], Q2416723: ['aile', 'theme_park'], Q2281788: ['aile', 'aquarium'],
+  Q11315: ['alisveris', 'mall'], Q31374404: ['alisveris', 'mall'], Q54927709: ['alisveris', 'outlet'],
+  Q216107: ['alisveris', 'department_store'], Q2080521: ['alisveris', 'market_hall'], Q219760: ['alisveris', 'bazaar'],
+  Q385870: ['alisveris', 'flea_market'], Q21000333: ['alisveris', 'shopping_street'],
   Q570116: ['gezi', 'attraction'],
 };
 const GENERIC = new Set(['attraction', 'historic', 'bridge']); // birden fazla tür varsa daha özel olan seçilir
@@ -262,8 +277,10 @@ async function fetchWikidataPlaces(lat, lon, radiusKm, sightCats) {
     const r = { ...it, label: lb.label, trTitle: lb.trTitle };
     if (NOISY_NATURE.has(r.type) && !r.trTitle && r.sitelinks < 3) continue;
     if (GENERIC_NAME.test(r.label)) continue; // "Köprü 2", "Cami" gibi adsız kayıtlar
+    if (r.cat === 'alisveris' && NOT_SHOPPING.test(r.label)) continue;
     const cats = [r.cat];
     if (r.cat === 'dini') cats.push('tarihi'); // Wikipedia'da maddesi olan cami/kilise çoğunlukla tarihi
+    if (r.type === 'bedesten') cats.push('alisveris');
     let s = 1 + popularity(r.sitelinks, !!r.trTitle) + (TYPE_BOOST[r.type] || 0);
     if (r.type === 'archaeological_site' && r.sitelinks < 3) s -= 2; // görünür kalıntısı olmayan antik yerleşimler
     if (MINOR_IF_OBSCURE.has(r.type) && r.sitelinks <= 1) s -= 1.2; // tek maddeli mahalle camisi, küçük köprü vb.
@@ -300,6 +317,39 @@ export async function enrichHours(places, limit = 60) {
   }
 }
 
+// ---------- Alışveriş ----------
+// AVM ve outletler, pazar yerleri. Kaynak Nominatim (OSM): AVM'lerin çoğunun Wikidata kaydı yok (ör. FoxTown),
+// Overpass ise geniş alanda güvenilmez. Ünlü çarşılar, alışveriş caddeleri ve büyük mağazalar Wikidata'dan gelir.
+const OUTLET_NAME = /outlet|factory stores?|designer village|\bvillage\b/i;
+const NOT_SHOPPING = /raststätte|rastplatz|autogrill|area di servizio|aire de service|tankstelle|parking|parcheggio/i;
+
+function nomShop(r, i, n, type) {
+  const ex = r.extratags || {};
+  const tags = { name: r.name };
+  for (const k of ['opening_hours', 'website', 'contact:website', 'phone', 'wikidata', 'wheelchair']) if (ex[k]) tags[k] = ex[k];
+  // Nominatim sonuçları önem sırasıyla gelir; sıradaki yeri de hesaba katılır
+  const base = 1 + (1 - i / n) * 0.8 + (type === 'outlet' ? 1.5 : 0) + (ex.opening_hours ? (type === 'market' ? 0.6 : 0.2) : 0)
+    + (ex.website || ex['contact:website'] ? 0.2 : 0);
+  return {
+    id: (r.osm_type || 'n')[0] + r.osm_id, name: r.name, lat: +r.lat, lon: +r.lon, cats: ['alisveris'], type,
+    dur: TYPES[type][1], score: base + (ex.wikidata ? 1.5 : 0), _base: base, hours: ex.opening_hours || null, tags,
+  };
+}
+
+async function fetchShopping(lat, lon, radiusKm) {
+  const out = [];
+  const malls = (await nominatimNearby('mall', lat, lon, radiusKm * 1000, 40))
+    .filter(r => r.category === 'shop' && r.type === 'mall' && r.name && !NOT_SHOPPING.test(r.name));
+  malls.forEach((r, i) => out.push(nomShop(r, i, malls.length, OUTLET_NAME.test(r.name) ? 'outlet' : 'mall')));
+  // Pazar yerleri: uzaktaki semt pazarına gidilmez; en fazla 10 km
+  try {
+    const markets = (await nominatimNearby('marketplace', lat, lon, Math.min(radiusKm, 10) * 1000, 25))
+      .filter(r => r.category === 'amenity' && r.type === 'marketplace' && r.name && !NOT_SHOPPING.test(r.name));
+    markets.forEach((r, i) => out.push(nomShop(r, i, markets.length, 'market')));
+  } catch { /* AVM'lerle devam */ }
+  return out;
+}
+
 export async function fetchPlaces({ lat, lon, radiusKm, cats }) {
   const sight = cats.filter(c => SIGHT_CATS.includes(c));
   const food = cats.filter(c => c === 'yemek' || c === 'kafe');
@@ -314,12 +364,14 @@ export async function fetchPlaces({ lat, lon, radiusKm, cats }) {
     const a = `(around:${Math.round(Math.min(radiusKm * 1000, 2000))},${lat.toFixed(5)},${lon.toFixed(5)})`;
     for (const c of food) for (const q of CLAUSES[c]) parts.push(q.replaceAll('{b}', a).replaceAll('{n}', ''));
   }
-  let osmErr = null, wdErr = null;
-  const [osm, wd] = await Promise.all([
+  let osmErr = null, wdErr = null, shopErr = null;
+  const [osmDetail, wd, shops] = await Promise.all([
     parts.length ? overpass(query(parts, 1000), 20000).then(d => parseElements(d.elements)).catch(e => { osmErr = e; return []; }) : [],
     sight.length ? fetchWikidataPlaces(lat, lon, radiusKm, sight).catch(e => { wdErr = e; return []; }) : [],
+    sight.includes('alisveris') ? fetchShopping(lat, lon, radiusKm).catch(e => { shopErr = e; return []; }) : [],
   ]);
-  if (!osm.length && !wd.length && (osmErr || wdErr)) throw osmErr || wdErr;
+  const osm = [...osmDetail, ...shops];
+  if (!osm.length && !wd.length && (osmErr || wdErr || shopErr)) throw osmErr || wdErr || shopErr;
 
   // OSM yerlerini ortak önem ölçüsüyle puanla: Wikidata kimliği olanların madde sayısını topluca çek.
   const sl = new Map(wd.map(w => [w.tags.wikidata, w._sl]));
@@ -349,7 +401,7 @@ export async function fetchPlaces({ lat, lon, radiusKm, cats }) {
   for (const p of list) p.dist = haversineKm(origin, p);
   const result = dedupe(list.filter(p => p.dist <= radiusKm * 1.08));
   // Wikidata çöktüyse liste eksiktir; OSM'nin çökmesi yalnızca yürüme mesafesinde ayrıntı kaybıdır.
-  result.partial = !!wdErr || (!!osmErr && radiusKm <= OSM_DETAIL_MAX_KM);
+  result.partial = !!wdErr || !!shopErr || (!!osmErr && radiusKm <= OSM_DETAIL_MAX_KM);
   // Çalışma saatleri arka planda eklenir; çağıran isterse bekler (plan), istemezse listeyi hemen gösterir (Keşfet).
   result.hoursReady = sight.length
     ? enrichHours([...result].sort((a, b) => b.score - a.score)).catch(() => {})

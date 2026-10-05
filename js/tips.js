@@ -47,6 +47,16 @@ export function buildTips(trip, settings = {}) {
   if (types.has('museum')) add('📅', t('Müzelerin kapalı günü'), t('Birçok müze haftada bir gün (çoğunlukla pazartesi) kapalıdır, resmî tatillerde saatler değişebilir. Plandaki uyarılara bak.'));
   if (cats.has('dogal')) add('📶', t('Doğada telefon çekmeyebilir'), t('Şelale, kanyon ve dağlık yerlerde sinyal olmayabilir. Haritayı önceden çevrimdışı indir, yanına su ve rahat ayakkabı al, birine nereye gittiğini söyle.'));
   if (types.has('beach') || types.has('bay')) add('🏖️', t('Plaj'), t('Gölge az olabilir; şemsiye ve deniz ayakkabısı işe yarar. Mavi Bayraklı plajlar düzenli denetlenir.'));
+  const shopping = cats.has('alisveris') || trip.interests?.includes('alisveris');
+  if (shopping && sunday && ['de', 'at'].includes(cc)) {
+    add('🛍️', t('Pazar günü mağazalar kapalı'), t("Almanya ve Avusturya'da pazar günleri mağazalar ve AVM'ler kapalıdır (istasyon ve havalimanı dükkânları hariç). Alışverişi başka bir güne koy."), 'warn');
+  }
+  if (shopping && cc === 'tr' && (types.has('bazaar') || types.has('bedesten') || types.has('market_hall'))) {
+    add('🧿', t('Çarşıda pazarlık'), t('Kapalı çarşı ve bedestenlerde pazarlık olağandır; birkaç dükkânda fiyat sorduktan sonra karar ver.'));
+  }
+  if (shopping && abroad && home === 'ch') {
+    add('🛃', t("İsviçre'ye dönüşte gümrük"), t("Yurt dışından getirdiğin mallar kişi başı günlük toplam 150 CHF'ye kadar KDV'siz. Aşarsan tutarın tamamı için İsviçre KDV'si ödenir; QuickZoll uygulamasıyla önceden beyan edebilirsin. Et (kişi başı 1 kg), alkol ve tütün için ayrıca miktar sınırları var."), 'warn');
+  }
   if (car && trip.drive && trip.drive.min > 180) add('⏱️', t('Uzun sürüş'), t('Evden tek yön yaklaşık {d} sürüş var. İlk ve son günü hafif tut, en geç 2 saatte bir mola ver.', { d: fmtDur(trip.drive.min) }), 'warn');
 
   // ---- Kişilere özel ----

@@ -1,7 +1,7 @@
 // Çevrimdışı destek: uygulama dosyaları önbelleğe alınır; gezilen harita parçaları ve
 // açılan Wikipedia özetleri de saklanır. Kayıtlı geziler zaten cihazda (localStorage).
 
-const VERSION = 'rota-v8';
+const VERSION = 'rota-v9';
 const SHELL = [
   './', 'index.html', 'manifest.webmanifest', 'css/app.css', 'data/destinations.json',
   'js/i18n.js', 'js/i18n/en.js', 'js/i18n/fr.js',

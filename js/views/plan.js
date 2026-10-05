@@ -100,7 +100,7 @@ export function renderPlan(root) {
       check(t('Evcil hayvan geliyor'), 'pet')),
     section(t('Nasıl gezeceksin?'), segmented(Object.entries(TRANSPORTS).map(([value, x]) => ({ value, label: x.label })), form.transport, v => { form.transport = v; })),
     section(t('Neler ilgini çeker?'), chips(SIGHT_CATS.map(c => ({ value: c, ...CATS[c] })), form.interests, v => { form.interests = v; }),
-      h('p', { class: 'muted small' }, t('Öğle ve akşam yemeği önerileri otomatik eklenir.'))),
+      h('p', { class: 'muted small' }, t('Öğle ve akşam yemeği önerileri otomatik eklenir. Alışverişi seçersen her güne bir alışveriş durağı (outlet, AVM, çarşı ya da pazar) eklenir.'))),
     section(t('Tempo'), segmented(Object.entries(PACES).map(([value, p]) => ({ value, label: p.label, sub: p.sub })), form.pace, v => { form.pace = v; })),
     staySec,
     section(t('Yemekler nasıl olsun?'), foodBox),

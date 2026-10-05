@@ -4,8 +4,8 @@ Telefonda uygulama gibi çalışan (PWA) gezi planlayıcı. Günübirlik ve uzun
 
 - **Öner ("Nereye gidelim?"):** Nereden çıkacağın, ne kadar yol göze aldığın ("3–4 saat"), araba ya da tren, ülke ve yer türüne göre gidilecek yer önerir. Araba süreleri OSRM'den, tren süreleri İsviçre tarifesinden (transport.opendata.ch) gerçek değerlerdir.
 - **Keşfet:** Bulunduğun yerin ya da seçtiğin bir yerin çevresindeki tarihi, doğal ve görülecek yerler; tek dokunuşla "bugün için plan".
-- **Planla:** Yer + tarih + kimlerle + ilgi alanı + tempo → gün gün, saat saat plan. Plana öğle ve akşam yemeği önerileri, yol süreleri ve açılış saati uyarıları eklenir.
-- **Bütçe:** Yakıt, konaklama, yemek, giriş ücretleri; her kalem düzenlenebilir. Para birimi ve fiyatlar yaşanılan ülkeye göre (İsviçre / Türkiye).
+- **Planla:** Yer + tarih + kimlerle + ilgi alanı + tempo → gün gün, saat saat plan. Plana öğle ve akşam yemeği önerileri, yol süreleri ve açılış saati uyarıları eklenir. İsteğe bağlı **alışveriş**: başka ilgi alanlarıyla birlikte seçilirse her güne bir alışveriş durağı (outlet, AVM, çarşı, pazar, alışveriş caddesi) eklenir; tek başına seçilirse alışveriş günü planlanır. İsviçre, Almanya ve Avusturya'da çalışma saati bilinmeyen mağazalar pazar günü plana konmaz.
+- **Bütçe:** Yakıt, konaklama, yemek, giriş ücretleri, alışveriş; her kalem düzenlenebilir. Para birimi ve fiyatlar yaşanılan ülkeye göre (İsviçre / Türkiye). Tahmini toplam planın başında, günlük tutar her günün altında, kişi başı giriş ücreti ücretli yerlerin yanında görünür.
 - **Bilgiler:** Hava tahmini; gidilen yere, mevsime ve kişilere özel uyarılar (vinyet, ZTL, Müzekart, roaming, acil numaralar…).
 - İnternetsiz açılır, veriler sadece cihazda saklanır, hesap gerekmez.
 - Türkçe, İngilizce ve Fransızca (Ayarlar → Dil). Yer adları ve Wikipedia özetleri de seçilen dilde gelir.
@@ -24,10 +24,12 @@ powershell -ExecutionPolicy Bypass -File tools/i18n-check.ps1
 |---|---|
 | Bilinen yerler + önem sırası | Wikidata (kaç dilde Wikipedia maddesi var) |
 | Ayrıntı: çalışma saati, küçük müzeler, lokantalar | OpenStreetMap (Overpass) |
-| Yer arama | Nominatim |
+| Yer arama; otopark, lokanta, AVM/outlet ve pazar yerleri | Nominatim |
 | Açıklama ve fotoğraf | Wikipedia |
 | Hava | Open-Meteo |
 | Yol mesafesi | OSRM |
+| Ülke bilgisi (başkent, dil, trafik yönü) | Wikidata + tarayıcının kendi çevirileri |
+| Döviz kuru | frankfurter.dev (Avrupa Merkez Bankası) |
 
 Ölçümlere göre ücretsiz OSM sunucuları şehir ölçeğindeki alan taramalarında sık sık zaman aşımına düşüyor (Zürih 10 km: 30 saniyede yanıt yok). Bu yüzden:
 

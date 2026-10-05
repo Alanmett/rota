@@ -26,7 +26,7 @@ export async function generateTrip(f, settings, progress = () => {}) {
 
   progress(t('Günler planlanıyor…'));
   const plan = buildItinerary(sights, dates, {
-    pace: f.pace, transport: f.transport, travelers: f.travelers,
+    pace: f.pace, transport: f.transport, travelers: f.travelers, cc: f.dest.cc,
     origin: f.origin || null, startMin: f.startMin, firstDayBudget: f.firstDayBudget,
   });
   const byId = Object.fromEntries(sights.map(p => [p.id, p]));

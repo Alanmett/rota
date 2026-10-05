@@ -3,14 +3,14 @@
 import { h, fill, toast, openSheet, closeSheet, setTitle, onLeave, linkBtn, emptyState, tappable } from '../ui.js';
 import { getTrip, saveTrip, deleteTrip, getSettings } from '../store.js';
 import { computeTimeline, gmapsDayLink, gmapsDir, bestInsertIndex, PACES, TRANSPORTS, LEG_EMOJI } from '../planner.js';
-import { computeBudget, STAYS, stayOf, FOODS, foodOf, savingTips, factorNote, destCurrency } from '../budget.js';
+import { computeBudget, STAYS, stayOf, FOODS, foodOf, savingTips, factorNote, destCurrency, ticketInfo } from '../budget.js';
 import { buildTips } from '../tips.js';
 import { refreshWeather, addParking } from '../tripgen.js';
 import { typeLabel, catEmoji, cuisineLabel } from '../places.js';
 import { showPlaceDetail, wikiMoreLabel, parkLink } from '../details.js';
 import { wxPill } from '../components.js';
 import { createMap, numIcon, emojiIcon, meIcon, popupFor, DAY_COLORS } from '../map.js';
-import { WX, exchangeRate } from '../api.js';
+import { WX, exchangeRate, countryInfo } from '../api.js';
 import { fmtDur, fmtKm, fmtClock, fmtMoney, fmtNum, fmtDay, fmtDayLong, fmtRange, todayISO, currencySymbol } from '../util.js';
 import { t, getLang, locale } from '../i18n.js';
 
@@ -45,6 +45,18 @@ export function renderTrip(root, id, tab) {
   render(body, ctx);
   if (tab !== 'harita') maybeRefreshWeather(ctx);
   if (tab === 'plan' || tab === 'harita') maybeAddParking(ctx, tab === 'plan');
+  if (tab === 'bilgi') maybeAddCountry(ctx);
+}
+
+// Yurt dışı gezisinde ülke bilgisi alınamamışsa (servis o an yanıt vermediyse) yeniden dener.
+async function maybeAddCountry(ctx) {
+  const { trip, settings } = ctx;
+  if (trip.country || !trip.dest.cc || trip.dest.cc === settings.homeCountry || !navigator.onLine) return;
+  try {
+    trip.country = await countryInfo(trip.dest.cc);
+    ctx.save();
+    if (ctx.body.isConnected) ctx.rerender();
+  } catch { /* bilgisiz devam */ }
 }
 
 // Plan değiştiyse (durak eklendi/taşındı) otoparkı henüz aranmamış duraklar için arar.
@@ -94,12 +106,29 @@ function renderPlanTab(body, ctx) {
   if (trip.days.every(d => !d.stops.length)) {
     body.append(h('div', { class: 'note warn' }, t('Plana yer eklenemedi. Aşağıdaki listeden ekleyebilir ya da daha geniş bir alanla yeniden plan yapabilirsin.')));
   }
+  ctx.budget = computeBudget(trip, ctx.settings);
+  body.append(costCard(ctx));
   trip.days.forEach((_, di) => body.append(dayCard(ctx, di)));
   const alts = altSection(ctx);
   if (alts) body.append(alts);
   body.append(h('div', { class: 'danger-zone' },
     h('button', { class: 'btn small', onclick: () => rename(ctx) }, '✏️ ' + t('Adını değiştir')),
     h('button', { class: 'btn small danger-text', onclick: () => remove(ctx) }, '🗑️ ' + t('Geziyi sil'))));
+}
+
+// Planın başında: gezinin tahmini maliyeti ve kalemleri; dokununca Bütçe sekmesi açılır
+function costCard(ctx) {
+  const { trip, budget: b } = ctx;
+  const parts = b.lines.filter(l => l.amount > 0).map(l => `${l.label} ${fmtMoney(l.amount)}`);
+  if (b.buffer) parts.push(`${t('Beklenmedik giderler')} ${fmtMoney(b.buffer)}`);
+  const open = b.lines.filter(l => !l.amount && !l.overridden).map(l => l.label); // otoyol, bilet, alışveriş gibi elle girilenler
+  return h('a', { class: 'card cost-card', href: `#/gezi/${trip.id}/butce` },
+    h('div', { class: 'cost-head' },
+      h('div', {}, h('div', { class: 'muted small' }, t('Tahmini maliyet')), h('div', { class: 'cost-total' }, fmtMoney(b.total))),
+      h('div', { class: 'muted small' }, t('kişi başı ~{p}', { p: fmtMoney(b.perPerson) }))),
+    parts.length > 0 && h('div', { class: 'cost-parts small' }, parts.join(' · ')),
+    open.length > 0 && h('div', { class: 'muted small' }, t('Henüz dahil değil: {x}', { x: open.join(', ') })),
+    h('div', { class: 'cost-more small' }, t('Bütçeyi gör ve düzenle') + ' →'));
 }
 
 function dayCard(ctx, di) {
@@ -135,8 +164,17 @@ function dayCard(ctx, di) {
     day.stops.length ? list : h('p', { class: 'muted day-empty' }, t('Bu güne henüz yer eklenmedi. Aşağıdaki "Vakit kalırsa" listesinden ekleyebilirsin.')),
     day.stops.length > 0 && h('footer', { class: 'day-foot' },
       h('span', {}, t('Gezi {v} · yol {r} · bitiş ~{e}', { v: fmtDur(tl.visitMin), r: fmtDur(tl.travelMin), e: fmtClock(tl.end) })),
+      trip.days.length > 1 && ctx.budget && h('span', { class: 'day-cost' }, '💰 ' + t('Bu gün ~{p}', { p: fmtMoney(ctx.budget.perDay[di]) })),
       total > limit && h('span', { class: 'badge warn' }, t('Yoğun gün')),
       route && linkBtn('🗺️ ' + t('Günün rotası (Google Maps)'), route, 'btn small')));
+}
+
+// Giriş ücreti: tahmini kişi başı tutar, müze kartı ya da ücretsiz
+function ticketText(p, ctx) {
+  const ti = ticketInfo(p, ctx.trip, ctx.settings);
+  if (ti?.card) return ` · 🎟️ ${ti.card}`;
+  if (ti?.price) return ` · 🎟️ ${t('~{p}/kişi', { p: fmtMoney(ti.price) })}`;
+  return p.tags?.fee === 'no' ? ` · ${t('ücretsiz')}` : '';
 }
 
 function stopItem(ctx, di, si, it, n) {
@@ -146,7 +184,7 @@ function stopItem(ctx, di, si, it, n) {
     h('div', { class: 'tl-num', style: `background:${color(di)}` }, String(n)),
     tappable({ class: 'tl-body', onclick: () => showPlaceDetail(p, { date: ctx.trip.days[di].date }) },
       h('div', { class: 'tl-name' }, p.name),
-      h('div', { class: 'tl-meta' }, `${catEmoji(p)} ${typeLabel(p)} · ~${fmtDur(p.dur)}`),
+      h('div', { class: 'tl-meta' }, `${catEmoji(p)} ${typeLabel(p)} · ~${fmtDur(p.dur)}${ticketText(p, ctx)}`),
       it.warn.map(w => h('div', { class: 'tl-warn' }, `⚠️ ${w}`))),
     h('button', { class: 'icon-btn', 'aria-label': t('{p}: seçenekler', { p: p.name }), onclick: () => stopMenu(ctx, di, si) }, '⋯'));
 }
