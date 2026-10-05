@@ -1,6 +1,7 @@
 // Uygulama girişi: sayfa yönlendirme, alt menü, çevrimdışı göstergesi, service worker.
 
 import { h, $, initSheet, closeSheet, runLeave, setTitle } from './ui.js';
+import { renderSuggest } from './views/suggest.js';
 import { renderNear } from './views/near.js';
 import { renderPlan } from './views/plan.js';
 import { renderTrips } from './views/trips.js';
@@ -12,6 +13,7 @@ import { setCurrency } from './util.js';
 setCurrency(getSettings().currency);
 
 const routes = [
+  [/^#\/oner$/, renderSuggest, 'oner', 'Nereye gidelim?'],
   [/^#\/kesfet$/, renderNear, 'kesfet', 'Keşfet'],
   [/^#\/planla$/, renderPlan, 'planla', 'Gezi planla'],
   [/^#\/geziler$/, renderTrips, 'geziler', 'Gezilerim'],
@@ -21,9 +23,9 @@ const routes = [
 
 let lastTripId = null;
 function route() {
-  const hash = location.hash || '#/kesfet';
+  const hash = location.hash || '#/oner';
   const r = routes.find(([re]) => re.test(hash));
-  if (!r) { location.replace('#/kesfet'); return; }
+  if (!r) { location.replace('#/oner'); return; }
   const [re, fn, tab, title] = r;
   const args = hash.match(re).slice(1);
   runLeave();

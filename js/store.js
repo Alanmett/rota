@@ -68,6 +68,10 @@ export function deleteTrip(id) { const all = allTrips(); delete all[id]; write(K
 export const getNear = () => read(K.near, null);
 export const saveNear = v => write(K.near, v);
 
+// Ekranların hatırladığı küçük tercihler (son seçilen süre, ülke vb.)
+export const getPref = (name, fb) => read(`rota.pref.${name}`, fb);
+export const savePref = (name, v) => write(`rota.pref.${name}`, v);
+
 export function exportData() {
   return JSON.stringify({ app: 'rota', version: 1, exportedAt: new Date().toISOString(), settings: read(K.settings, {}), trips: allTrips() }, null, 2);
 }

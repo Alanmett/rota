@@ -23,6 +23,9 @@ const initForm = () => ({
   transport: getSettings().transport, interests: ['tarihi', 'muze', 'dogal', 'manzara'], pace: 'normal', level: 'orta', radiusKm: 15,
 });
 
+// Öner ekranından gelen yerle formu önceden doldurur.
+export function prefillPlan(values) { form = { ...initForm(), ...values }; }
+
 export function renderPlan(root) {
   form ||= initForm();
   if (form.startDate < todayISO()) form.startDate = todayISO();

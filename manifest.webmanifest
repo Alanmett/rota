@@ -3,7 +3,7 @@
   "short_name": "Rota",
   "description": "Günübirlik ve uzun geziler için kişisel gezi planlayıcı",
   "lang": "tr",
-  "start_url": "./#/kesfet",
+  "start_url": "./#/oner",
   "scope": "./",
   "display": "standalone",
   "orientation": "portrait",

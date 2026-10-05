@@ -10,14 +10,11 @@ import { showPlaceDetail, addToTripSheet } from '../details.js';
 import { placeSearch, placeCard } from '../components.js';
 import { createMap, emojiIcon, meIcon, popupFor } from '../map.js';
 import { catEmoji } from '../places.js';
-import { todayISO, fmtClock } from '../util.js';
+import { todayISO, fmtClock, fmtDur } from '../util.js';
 
-const RADII = [
-  { value: 2, label: 'Yürüme', sub: '2 km' },
-  { value: 10, label: 'Şehir içi', sub: '10 km' },
-  { value: 50, label: 'Günübirlik', sub: '50 km' },
-  { value: 120, label: 'Uzun yol', sub: '120 km' },
-];
+// Mesafe kaydırıcısının durakları (km); kısa mesafelerde daha ince ayar
+const STOPS = [1, 2, 3, 5, 7, 10, 15, 20, 30, 40, 50, 75, 100, 150, 200];
+const driveMin = km => (km * 1.3) / (km <= 15 ? 30 : 65) * 60 + 5;
 const CAT_OPTIONS = Object.entries(CATS).map(([value, c]) => ({ value, ...c }));
 
 const saved = getNear() || {};
@@ -28,6 +25,31 @@ const state = {
   results: null, weather: null, view: 'list', sort: 'rank', showAll: false,
 };
 const persist = () => saveNear({ loc: state.loc, radius: state.radius, cats: state.cats });
+
+// Öner ekranından "Çevresini keşfet" ile gelindiğinde konumu ayarlar.
+export function setNearLocation(loc) {
+  state.loc = loc; state.results = null; state.weather = null;
+  if (state.radius > 20) state.radius = 10;
+  persist();
+}
+
+function radiusControl() {
+  const value = h('b', {});
+  const hint = h('span', { class: 'muted small' });
+  const upd = () => {
+    value.textContent = `${state.radius} km`;
+    hint.textContent = state.radius <= 3 ? 'yürüme mesafesi · küçük yerler dahil' : `arabayla en fazla ~${fmtDur(driveMin(state.radius))}`;
+  };
+  const idx = Math.max(0, STOPS.findIndex(s => s >= state.radius));
+  const input = h('input', {
+    type: 'range', class: 'range', min: '0', max: String(STOPS.length - 1), step: '1', value: String(idx), 'aria-label': 'Mesafe',
+    oninput: e => { state.radius = STOPS[+e.target.value]; upd(); },
+    onchange: persist,
+  });
+  upd();
+  return h('div', { class: 'range-row' }, h('div', { class: 'range-head' }, value, hint), input,
+    h('p', { class: 'muted small' }, 'Uzak bir yer mi arıyorsun? "Öner" sekmesi yol süresine göre gidilecek yer önerir.'));
+}
 
 export function renderNear(root) {
   const locCard = h('section', { class: 'card loc-card' });
@@ -193,7 +215,7 @@ export function renderNear(root) {
 
   root.append(
     locCard,
-    h('section', {}, h('h2', { class: 'h-sec' }, 'Ne kadar uzağa?'), segmented(RADII, state.radius, v => { state.radius = v; persist(); })),
+    h('section', {}, h('h2', { class: 'h-sec' }, 'Ne kadar uzağa?'), radiusControl()),
     h('section', {}, h('h2', { class: 'h-sec' }, 'Ne görmek istersin?'), chips(CAT_OPTIONS, state.cats, v => { state.cats = v; persist(); })),
     goBtn,
     results,

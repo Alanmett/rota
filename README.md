@@ -2,6 +2,7 @@
 
 Telefonda uygulama gibi çalışan (PWA) gezi planlayıcı. Günübirlik ve uzun geziler için:
 
+- **Öner ("Nereye gidelim?"):** Nereden çıkacağın, ne kadar yol göze aldığın ("3–4 saat"), araba ya da tren, ülke ve yer türüne göre gidilecek yer önerir. Araba süreleri OSRM'den, tren süreleri İsviçre tarifesinden (transport.opendata.ch) gerçek değerlerdir.
 - **Keşfet:** Bulunduğun yerin ya da seçtiğin bir yerin çevresindeki tarihi, doğal ve görülecek yerler; tek dokunuşla "bugün için plan".
 - **Planla:** Yer + tarih + kimlerle + ilgi alanı + tempo → gün gün, saat saat plan. Plana öğle ve akşam yemeği önerileri, yol süreleri ve açılış saati uyarıları eklenir.
 - **Bütçe:** Yakıt, konaklama, yemek, giriş ücretleri; her kalem düzenlenebilir. Para birimi ve fiyatlar yaşanılan ülkeye göre (İsviçre / Türkiye).
@@ -28,6 +29,16 @@ Telefonda uygulama gibi çalışan (PWA) gezi planlayıcı. Günübirlik ve uzun
 ## Yayın
 
 https://alanmett.github.io/rota/ (GitHub Pages, `main` dalı). Güncellemek için değişiklikleri commit'leyip `git push` yapmak yeterli; site 1–2 dakikada yenilenir.
+
+## Gidilecek yer veri seti
+
+`data/destinations.json`, 23 ülkede (İsviçre, komşuları, Türkiye ve Avrupa'nın büyük kısmı) gezi rehberi (Wikivoyage) maddesi olan yaklaşık 16 bin yeri içerir. Wikidata'dan `tools/build-destinations.ps1` ile üretilir; yeniden üretmek için:
+
+```
+powershell -ExecutionPolicy Bypass -File tools/build-destinations.ps1
+```
+
+Önem sıralaması: kaç dilde gezi rehberi maddesi var, kaç dilde Wikipedia maddesi var, UNESCO mirası mı. Canlı sorgu yerine hazır veri seti kullanılmasının nedeni ölçümdür: aynı sorgu canlı yapıldığında 250 km yarıçap için ~25 sn sürüyordu; hazır veriyle öneriler anında ve internetsiz çalışıyor.
 
 ## Bilgisayarda çalıştırma
 
