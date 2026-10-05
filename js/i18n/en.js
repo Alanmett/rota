@@ -533,8 +533,6 @@ export default {
   "Zirve": "Summit",
   "Zorlu tırmanış gerektiren yerleri (zirve, kanyon) plana koymadım. Tarihi yerlerde zemin bozuk olabilir; erişim bilgisi için yerin detayına bak.": "I left out places that need a hard climb (summits, canyons). The ground at historic sites may be uneven; see each place's details for accessibility.",
   "ZTL bölgeleri": "ZTL zones",
-  "{c} için konaklama, yemek ve giriş fiyatları yaşadığın ülkeye göre ~%{p} daha düşük hesaplandı.": "Accommodation, food and entry prices for {c} are estimated ~{p}% lower than in your home country.",
-  "{c} için konaklama, yemek ve giriş fiyatları yaşadığın ülkeye göre ~%{p} daha yüksek hesaplandı.": "Accommodation, food and entry prices for {c} are estimated ~{p}% higher than in your home country.",
   "{c}/kişi": "{c}/person",
   "{c}/oda": "{c}/room",
   "{m} dk yürüme": "{m} min walk",
@@ -568,4 +566,8 @@ export default {
   "Yakındaki otoparklar": "Parking nearby",
   "Yemekler nasıl olsun?": "How will you eat?",
   "Yol kenarı park": "Street parking",
+  " · şehre göre çok değişir, gerekirse düzenle": " · varies a lot by city; edit if needed",
+  "{c} için fiyatlar yaşadığın ülkeye göre daha düşük hesaplandı: konaklama ~%{a}, yemek ve diğer harcamalar ~%{b} daha ucuz.": "Prices for {c} are estimated lower than in your home country: accommodation ~{a}% and food and other costs ~{b}% cheaper.",
+  "{c} için fiyatlar yaşadığın ülkeye göre daha yüksek hesaplandı: konaklama ~%{a}, yemek ve diğer harcamalar ~%{b} daha pahalı.": "Prices for {c} are estimated higher than in your home country: accommodation ~{a}% and food and other costs ~{b}% more expensive.",
+  "≈ {a} · kişi başı ≈ {b} (güncel kurla)": "≈ {a} · ≈ {b} per person (current rate)",
 };

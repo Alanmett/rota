@@ -291,6 +291,27 @@ export async function weatherDaily(lat, lon, startISO, endISO) {
   return null;
 }
 
+// ---------- Döviz kuru (Avrupa Merkez Bankası, frankfurter.dev; ücretsiz, anahtarsız) ----------
+// Günde bir kez sorulur ve cihazda saklanır; internet yoksa son bilinen kur kullanılır.
+export async function exchangeRate(from, to) {
+  if (from === to) return 1;
+  const KEY = 'rota.fx.v1', k = `${from}>${to}`;
+  let cache = {};
+  try { cache = JSON.parse(localStorage.getItem(KEY)) || {}; } catch { /* boş başla */ }
+  const hit = cache[k];
+  if (hit && Date.now() - hit.t < 864e5) return hit.r;
+  try {
+    const r = await fetchJSON(`https://api.frankfurter.dev/v1/latest?base=${from}&symbols=${to}`, {}, 8000);
+    const rate = r.rates?.[to];
+    if (rate) {
+      cache[k] = { r: rate, t: Date.now() };
+      try { localStorage.setItem(KEY, JSON.stringify(cache)); } catch { /* önemsiz */ }
+      return rate;
+    }
+  } catch { /* eski kurla devam */ }
+  return hit?.r ?? null;
+}
+
 // ---------- OSRM (sürüş mesafesi) ----------
 export async function driveRoute(a, b) {
   const u = `https://router.project-osrm.org/route/v1/driving/${a.lon.toFixed(5)},${a.lat.toFixed(5)};${b.lon.toFixed(5)},${b.lat.toFixed(5)}?overview=false`;

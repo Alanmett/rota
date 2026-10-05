@@ -3,14 +3,14 @@
 import { h, fill, toast, openSheet, closeSheet, setTitle, onLeave, linkBtn, emptyState, tappable } from '../ui.js';
 import { getTrip, saveTrip, deleteTrip, getSettings } from '../store.js';
 import { computeTimeline, gmapsDayLink, gmapsDir, bestInsertIndex, PACES, TRANSPORTS, LEG_EMOJI } from '../planner.js';
-import { computeBudget, STAYS, stayOf, FOODS, foodOf, savingTips, factorNote } from '../budget.js';
+import { computeBudget, STAYS, stayOf, FOODS, foodOf, savingTips, factorNote, destCurrency } from '../budget.js';
 import { buildTips } from '../tips.js';
 import { refreshWeather, addParking } from '../tripgen.js';
 import { typeLabel, catEmoji, cuisineLabel } from '../places.js';
 import { showPlaceDetail, wikiMoreLabel, parkLink } from '../details.js';
 import { wxPill } from '../components.js';
 import { createMap, numIcon, emojiIcon, meIcon, popupFor, DAY_COLORS } from '../map.js';
-import { WX } from '../api.js';
+import { WX, exchangeRate } from '../api.js';
 import { fmtDur, fmtKm, fmtClock, fmtMoney, fmtNum, fmtDay, fmtDayLong, fmtRange, todayISO, currencySymbol } from '../util.js';
 import { t, getLang, locale } from '../i18n.js';
 
@@ -312,11 +312,22 @@ function renderBudgetTab(body, ctx) {
   const country = trip.dest.cc ? new Intl.DisplayNames([locale()], { type: 'region' }).of(trip.dest.cc.toUpperCase()) : '';
   const note = trip.dest.cc ? factorNote(trip, settings, country) : null;
   const tips = savingTips(trip, settings);
+  // Gidilen ülkenin parasıyla yaklaşık karşılık (ör. Fransa'da fiyatları euro olarak düşünenler için)
+  const local = destCurrency(trip.dest.cc);
+  const fx = h('div', { class: 'muted small' });
+  if (local && local !== settings.currency) {
+    exchangeRate(settings.currency, local).then(rate => {
+      if (!rate || !fx.isConnected) return;
+      const fmt = new Intl.NumberFormat(locale(), { style: 'currency', currency: local, maximumFractionDigits: 0 });
+      fx.textContent = t('≈ {a} · kişi başı ≈ {b} (güncel kurla)', { a: fmt.format(b.total * rate), b: fmt.format(b.perPerson * rate) });
+    });
+  }
   fill(body,
     h('section', { class: 'card total-card' },
       h('div', { class: 'muted small' }, t('Tahmini toplam')),
       h('div', { class: 'big' }, fmtMoney(b.total)),
-      h('div', { class: 'muted small' }, t('Kişi başı yaklaşık {p} · {n} kişi', { p: fmtMoney(b.perPerson), n: people }))),
+      h('div', { class: 'muted small' }, t('Kişi başı yaklaşık {p} · {n} kişi', { p: fmtMoney(b.perPerson), n: people })),
+      fx),
     nights > 0 && h('section', { class: 'card' },
       h('h2', { class: 'h-sec' }, t('Nerede kalacaksın?')),
       h('div', { class: 'chips' }, Object.entries(STAYS).map(([k, s]) => h('button', {

@@ -533,8 +533,6 @@ export default {
   "Zirve": "Sommet",
   "Zorlu tırmanış gerektiren yerleri (zirve, kanyon) plana koymadım. Tarihi yerlerde zemin bozuk olabilir; erişim bilgisi için yerin detayına bak.": "J'ai écarté les lieux qui demandent une montée difficile (sommets, canyons). Le sol des sites historiques peut être inégal ; consultez la fiche du lieu pour l'accessibilité.",
   "ZTL bölgeleri": "Zones ZTL",
-  "{c} için konaklama, yemek ve giriş fiyatları yaşadığın ülkeye göre ~%{p} daha düşük hesaplandı.": "Pour {c}, l'hébergement, les repas et les entrées sont estimés ~{p} % moins chers que dans votre pays.",
-  "{c} için konaklama, yemek ve giriş fiyatları yaşadığın ülkeye göre ~%{p} daha yüksek hesaplandı.": "Pour {c}, l'hébergement, les repas et les entrées sont estimés ~{p} % plus chers que dans votre pays.",
   "{c}/kişi": "{c}/pers.",
   "{c}/oda": "{c}/chambre",
   "{m} dk yürüme": "{m} min à pied",
@@ -568,4 +566,8 @@ export default {
   "Yakındaki otoparklar": "Parkings à proximité",
   "Yemekler nasıl olsun?": "Comment allez-vous manger ?",
   "Yol kenarı park": "Stationnement en voirie",
+  " · şehre göre çok değişir, gerekirse düzenle": " · varie beaucoup selon la ville ; ajustez si besoin",
+  "{c} için fiyatlar yaşadığın ülkeye göre daha düşük hesaplandı: konaklama ~%{a}, yemek ve diğer harcamalar ~%{b} daha ucuz.": "Pour {c}, les prix sont estimés plus bas que dans votre pays : hébergement ~{a} % et repas et autres dépenses ~{b} % moins chers.",
+  "{c} için fiyatlar yaşadığın ülkeye göre daha yüksek hesaplandı: konaklama ~%{a}, yemek ve diğer harcamalar ~%{b} daha pahalı.": "Pour {c}, les prix sont estimés plus hauts que dans votre pays : hébergement ~{a} % et repas et autres dépenses ~{b} % plus chers.",
+  "≈ {a} · kişi başı ≈ {b} (güncel kurla)": "≈ {a} · ≈ {b} par personne (taux du jour)",
 };

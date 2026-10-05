@@ -9,10 +9,10 @@ export const COUNTRY_PRESETS = {
   ch: {
     label: t('İsviçre'), currency: 'CHF',
     budget: {
-      fuelPrice: 1.85,        // / litre
+      fuelPrice: 2.15,        // / litre (kullanıcı verisi, Ekim 2026 ortalaması)
       consumption: 7,         // L / 100 km
       // konaklama / gece: kamp ve hostel kişi başı, diğerleri oda başı
-      stay: { kamp: 20, hostel: 45, ekonomik: 100, orta: 180, konforlu: 320 },
+      stay: { kamp: 20, hostel: 45, ekonomik: 90, orta: 170, konforlu: 300 },
       food: { piknik: 15, ekonomik: 30, orta: 65, konforlu: 130 },  // kişi / gün
       ticketAvg: 15,          // ücretli yer başına, yetişkin
       transitPerPersonDay: 35,
