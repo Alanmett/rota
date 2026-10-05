@@ -1,14 +1,18 @@
-// Planla: belirli bir yere, belirli tarihlerde gezi.
+// Planla: tek bir yere belirli tarihlerde gezi, ya da birkaç şehirden geçen rota.
+// Rota modunda şehirler haritaya dokunarak ya da aranarak işaretlenir; uygulama en kısa sırayı ve gerçek yolu
+// bulur, geceleri dağıtır ve her şehir için Planla'daki tüm kurallarla gün gün plan çıkarır.
 
-import { h, toast, segmented, chips, stepper, spinner, section, row, dateField } from '../ui.js';
+import { h, fill, toast, segmented, chips, stepper, spinner, section, row, dateField, onLeave } from '../ui.js';
 import { CATS, SIGHT_CATS } from '../places.js';
 import { PACES, TRANSPORTS } from '../planner.js';
 import { FOODS, STAYS } from '../budget.js';
 import { getSettings } from '../store.js';
 import { generateTrip } from '../tripgen.js';
+import { generateRoute, MAX_ROUTE_DAYS, MAX_ROUTE_STOPS } from '../route.js';
 import { placeSearch } from '../components.js';
+import { createMap, numIcon, meIcon } from '../map.js';
 import { reverseGeocode, defaultRadiusFor } from '../api.js';
-import { todayISO, dateRange } from '../util.js';
+import { todayISO, dateRange, parseISODate, toISODate, fmtDMY } from '../util.js';
 import { t } from '../i18n.js';
 
 const SCOPES = [
@@ -19,25 +23,97 @@ const SCOPES = [
 ];
 
 let form = null; // sekmeler arası geçişte doldurulan bilgiler kaybolmasın
-const initForm = () => ({
-  dest: null, startDate: todayISO(), endDate: todayISO(), adults: 2, children: 0, elderly: false, pet: false,
-  transport: getSettings().transport, interests: ['tarihi', 'muze', 'dogal', 'manzara'], pace: 'normal', level: 'ekonomik', radiusKm: 15, stay: 'ekonomik',
-});
+const initForm = () => {
+  const s = getSettings();
+  return {
+    mode: 'tek',
+    dest: null, startDate: todayISO(), endDate: todayISO(), adults: 2, children: 0, elderly: false, pet: false,
+    transport: s.transport, interests: ['tarihi', 'muze', 'dogal', 'manzara'], pace: 'normal', level: 'ekonomik', radiusKm: 15, stay: 'ekonomik',
+    hidden: false,
+    route: { start: s.home ? 'home' : 'none', startPlace: null, back: true, cities: [], optimize: true },
+  };
+};
 
 // Öner ekranından gelen yerle formu önceden doldurur.
 export function prefillPlan(values) { form = { ...initForm(), ...values }; }
+
+const routeCity = r => ({
+  name: r.name, label: r.label || r.name, lat: r.lat, lon: r.lon, cc: r.cc || '', kind: r.kind || 'town',
+  wikidata: r.wikidata || null, wikipedia: r.wikipedia || null, nights: r.kind === 'city' ? 2 : 1,
+});
+
+// Öner ekranından "Rotaya ekle": durak sayısını döndürür (sığmadıysa 0)
+export function addToRoute(place) {
+  form ||= initForm();
+  form.mode = 'rota';
+  if (form.route.cities.length >= MAX_ROUTE_STOPS) return 0;
+  form.route.cities.push(routeCity(place));
+  return form.route.cities.length;
+}
 
 export function renderPlan(root) {
   form ||= initForm();
   if (form.startDate < todayISO()) form.startDate = todayISO();
   if (form.endDate < form.startDate) form.endDate = form.startDate;
+  let cleanup = null;
+  const rerender = () => { cleanup?.(); root.replaceChildren(); renderPlan(root); };
+  root.append(h('section', { class: 'form-sec' },
+    segmented([{ value: 'tek', label: t('Tek yer') }, { value: 'rota', label: t('Birkaç yer (rota)') }], form.mode, v => { form.mode = v; rerender(); }),
+    h('p', { class: 'muted small' }, form.mode === 'rota'
+      ? t('Görmek istediğin şehirleri haritada işaretle; sırayı, yolu ve her şehirde ne göreceğini ben planlayayım.')
+      : t('Tek bir şehir ya da bölgede, belirli günlerde gezi.'))));
+  cleanup = form.mode === 'rota' ? renderRouteForm(root) : renderSingleForm(root);
+}
 
+// ---- Ortak bölümler ----
+function commonSections({ route }) {
+  const check = (label, key) => h('label', { class: 'check' },
+    h('input', { type: 'checkbox', checked: form[key], onchange: e => { form[key] = e.target.checked; } }), label);
+  const transports = Object.entries(TRANSPORTS).filter(([k]) => !route || k !== 'yuruyus');
+  if (route && form.transport === 'yuruyus') form.transport = 'araba';
+  const foodBox = h('div');
+  const renderFood = () => foodBox.replaceChildren(h('div', { class: 'chips' }, Object.entries(FOODS).map(([k, x]) => h('button', {
+    type: 'button', class: 'chip' + (form.level === k ? ' on' : ''), 'aria-pressed': String(form.level === k),
+    onclick: () => { form.level = k; renderFood(); },
+  }, x.label))));
+  renderFood();
+  return {
+    who: section(t('Kimlerle?'),
+      row(t('Yetişkin'), stepper(form.adults, 1, 20, v => { form.adults = v; }, t('Yetişkin'))),
+      row(t('Çocuk'), stepper(form.children, 0, 10, v => { form.children = v; }, t('Çocuk'))),
+      check(t('Yaşlı ya da hareket kısıtı olan biri var'), 'elderly'),
+      check(t('Evcil hayvan geliyor'), 'pet')),
+    how: section(t('Nasıl gezeceksin?'), segmented(transports.map(([value, x]) => ({ value, label: x.label })), form.transport, v => { form.transport = v; })),
+    what: section(t('Neler ilgini çeker?'), chips(SIGHT_CATS.map(c => ({ value: c, ...CATS[c] })), form.interests, v => { form.interests = v; }),
+      h('p', { class: 'muted small' }, t('Öğle ve akşam yemeği önerileri otomatik eklenir. Alışverişi seçersen her güne bir alışveriş durağı (outlet, AVM, çarşı ya da pazar) eklenir.')),
+      segmented([{ value: false, label: '⭐ ' + t('Öne çıkanlar') }, { value: true, label: '🔎 ' + t('Az bilinenler') }], form.hidden, v => { form.hidden = v; }),
+      h('p', { class: 'muted small' }, t('"Az bilinenler" kalabalık turistik yerler yerine gözden kaçan, sakin yerleri öne çıkarır.'))),
+    pace: section(t('Tempo'), segmented(Object.entries(PACES).map(([value, p]) => ({ value, label: p.label, sub: p.sub })), form.pace, v => { form.pace = v; })),
+    stayChips,
+    food: section(t('Yemekler nasıl olsun?'), foodBox),
+  };
+}
+
+function stayChips() {
+  const wrap = h('div', { class: 'chips' });
+  const render = () => wrap.replaceChildren(...Object.entries(STAYS).map(([k, s]) => h('button', {
+    type: 'button', class: 'chip' + (form.stay === k ? ' on' : ''), 'aria-pressed': String(form.stay === k),
+    onclick: () => { form.stay = k; render(); },
+  }, s.label)));
+  render();
+  return wrap;
+}
+
+const travelers = () => ({ adults: form.adults, children: form.children, elderly: form.elderly, pet: form.pet });
+
+// ---- Tek yer ----
+function renderSingleForm(root) {
   const destBox = h('div');
   const scopeBox = h('div');
   const dur = h('p', { class: 'muted small' });
   const staySec = h('div');
-  const foodBox = h('div');
   const out = h('div', { 'aria-live': 'polite' });
+  const c = commonSections({ route: false });
 
   const renderScope = () => scopeBox.replaceChildren(segmented(SCOPES, form.radiusKm, v => { form.radiusKm = v; }));
   const pick = r => { form.dest = r; form.radiusKm = defaultRadiusFor(r.kind); renderDest(); renderScope(); };
@@ -51,19 +127,8 @@ export function renderPlan(root) {
     } else {
       destBox.replaceChildren(
         placeSearch({ placeholder: t('Şehir, ilçe, köy, bölge…'), onPick: pick }),
-        h('button', { class: 'btn small', type: 'button', onclick: useGps }, '◎ ' + t('Bulunduğum yer')));
+        h('button', { class: 'btn small', type: 'button', onclick: () => locate(pick) }, '◎ ' + t('Bulunduğum yer')));
     }
-  }
-
-  function useGps() {
-    if (!('geolocation' in navigator)) return toast(t('Bu cihaz konum özelliğini desteklemiyor.'));
-    toast(t('Konum alınıyor…'));
-    navigator.geolocation.getCurrentPosition(async pos => {
-      const { latitude: lat, longitude: lon } = pos.coords;
-      let info = null;
-      try { info = await reverseGeocode(lat, lon, 10); } catch { /* adsız devam */ }
-      pick({ ...(info || {}), lat, lon, name: info?.name || t('Bulunduğun yer'), label: info?.label || t('Bulunduğun yer'), kind: info?.kind || 'town' });
-    }, () => toast(t('Konum alınamadı; yeri yazarak arayabilirsin.')), { timeout: 15000, maximumAge: 300000 });
   }
 
   const updDur = () => {
@@ -84,40 +149,20 @@ export function renderPlan(root) {
       end.input.min = form.startDate; updDur();
     },
   });
-  const check = (label, key) => h('label', { class: 'check' },
-    h('input', { type: 'checkbox', checked: form[key], onchange: e => { form[key] = e.target.checked; } }), label);
   const submit = h('button', { class: 'btn primary wide', type: 'button', onclick: go }, t('Planı oluştur'));
+  staySec.append(section(t('Nerede kalacaksın?'), c.stayChips()));
 
   root.append(
     section(t('Nereye?'), destBox),
     section(t('Ne zaman?'), h('div', { class: 'two' },
       h('div', { class: 'field' }, h('span', {}, t('Gidiş')), start),
       h('div', { class: 'field' }, h('span', {}, t('Dönüş')), end)), dur),
-    section(t('Kimlerle?'),
-      row(t('Yetişkin'), stepper(form.adults, 1, 20, v => { form.adults = v; }, t('Yetişkin'))),
-      row(t('Çocuk'), stepper(form.children, 0, 10, v => { form.children = v; }, t('Çocuk'))),
-      check(t('Yaşlı ya da hareket kısıtı olan biri var'), 'elderly'),
-      check(t('Evcil hayvan geliyor'), 'pet')),
-    section(t('Nasıl gezeceksin?'), segmented(Object.entries(TRANSPORTS).map(([value, x]) => ({ value, label: x.label })), form.transport, v => { form.transport = v; })),
-    section(t('Neler ilgini çeker?'), chips(SIGHT_CATS.map(c => ({ value: c, ...CATS[c] })), form.interests, v => { form.interests = v; }),
-      h('p', { class: 'muted small' }, t('Öğle ve akşam yemeği önerileri otomatik eklenir. Alışverişi seçersen her güne bir alışveriş durağı (outlet, AVM, çarşı ya da pazar) eklenir.'))),
-    section(t('Tempo'), segmented(Object.entries(PACES).map(([value, p]) => ({ value, label: p.label, sub: p.sub })), form.pace, v => { form.pace = v; })),
-    staySec,
-    section(t('Yemekler nasıl olsun?'), foodBox),
+    c.who, c.how, c.what, c.pace, staySec, c.food,
     section(t('Ne kadar geniş bir alan?'), scopeBox, h('p', { class: 'muted small' }, t('Arabayla çevreyi gezeceksen geniş, şehir içinde kalacaksan dar alan seç.'))),
     submit,
     out,
   );
-  const renderStay = () => staySec.replaceChildren(section(t('Nerede kalacaksın?'),
-    h('div', { class: 'chips' }, Object.entries(STAYS).map(([k, s]) => h('button', {
-      type: 'button', class: 'chip' + (form.stay === k ? ' on' : ''), 'aria-pressed': String(form.stay === k),
-      onclick: () => { form.stay = k; renderStay(); },
-    }, s.label)))));
-  const renderFood = () => foodBox.replaceChildren(h('div', { class: 'chips' }, Object.entries(FOODS).map(([k, x]) => h('button', {
-    type: 'button', class: 'chip' + (form.level === k ? ' on' : ''), 'aria-pressed': String(form.level === k),
-    onclick: () => { form.level = k; renderFood(); },
-  }, x.label))));
-  renderDest(); renderScope(); renderStay(); renderFood(); updDur();
+  renderDest(); renderScope(); updDur();
 
   async function go() {
     if (!form.dest) { toast(t('Önce nereye gideceğini seç.')); return; }
@@ -130,9 +175,8 @@ export function renderPlan(root) {
     try {
       const trip = await generateTrip({
         kind: 'plan', name: n === 1 ? t('{p} günübirlik', { p: form.dest.name }) : t('{p} gezisi', { p: form.dest.name }), dest: form.dest,
-        startDate: form.startDate, endDate: form.endDate,
-        travelers: { adults: form.adults, children: form.children, elderly: form.elderly, pet: form.pet },
-        transport: form.transport, pace: form.pace, level: form.level, stay: form.stay, radiusKm: form.radiusKm, interests: form.interests,
+        startDate: form.startDate, endDate: form.endDate, travelers: travelers(),
+        transport: form.transport, pace: form.pace, level: form.level, stay: form.stay, radiusKm: form.radiusKm, interests: form.interests, hidden: form.hidden,
       }, getSettings(), msg => out.replaceChildren(spinner(msg)));
       form = null;
       location.hash = `#/gezi/${trip.id}`;
@@ -141,4 +185,168 @@ export function renderPlan(root) {
       submit.disabled = false;
     }
   }
+  return null;
+}
+
+function locate(onPick) {
+  if (!('geolocation' in navigator)) return toast(t('Bu cihaz konum özelliğini desteklemiyor.'));
+  toast(t('Konum alınıyor…'));
+  navigator.geolocation.getCurrentPosition(async pos => {
+    const { latitude: lat, longitude: lon } = pos.coords;
+    let info = null;
+    try { info = await reverseGeocode(lat, lon, 10); } catch { /* adsız devam */ }
+    onPick({ ...(info || {}), lat, lon, name: info?.name || t('Bulunduğun yer'), label: info?.label || t('Bulunduğun yer'), kind: info?.kind || 'town' });
+  }, () => toast(t('Konum alınamadı; yeri yazarak arayabilirsin.')), { timeout: 15000, maximumAge: 300000 });
+}
+
+// ---- Rota ----
+function renderRouteForm(root) {
+  const R = form.route;
+  const settings = getSettings();
+  const c = commonSections({ route: true });
+  const startBox = h('div');
+  const list = h('div', { class: 'rt-edit' });
+  const mapEl = h('div', { class: 'map route-map' });
+  const dur = h('p', { class: 'muted small' });
+  const staySec = h('div');
+  const out = h('div', { 'aria-live': 'polite' });
+  let map = null, layer = null;
+
+  const startPoint = () => {
+    if (R.start === 'home' && settings.home) return { name: t('Ev'), lat: settings.home.lat, lon: settings.home.lon, cc: settings.homeCountry, home: true };
+    if ((R.start === 'gps' || R.start === 'place') && R.startPlace) return R.startPlace;
+    return null;
+  };
+
+  function renderStart() {
+    const opt = (value, label) => h('button', {
+      type: 'button', class: 'chip' + (R.start === value ? ' on' : ''), 'aria-pressed': String(R.start === value),
+      onclick: () => {
+        if (value === 'gps') { locate(p => { R.start = 'gps'; R.startPlace = { name: p.name, lat: p.lat, lon: p.lon, cc: p.cc || '' }; renderStart(); draw(); }); return; }
+        R.start = value; if (value !== 'place') R.startPlace = null; renderStart(); draw();
+      },
+    }, label);
+    const sp = startPoint();
+    fill(startBox,
+      h('div', { class: 'chips' },
+        settings.home && opt('home', '🏠 ' + t('Evden')),
+        opt('gps', '◎ ' + t('Bulunduğum yer')),
+        opt('place', '🔎 ' + t('Başka yer')),
+        opt('none', t('İlk duraktan'))),
+      R.start === 'place' && !R.startPlace && placeSearch({ placeholder: t('Başlangıç yeri'), onPick: r => { R.startPlace = { name: r.name, lat: r.lat, lon: r.lon, cc: r.cc }; renderStart(); draw(); } }),
+      sp && h('p', { class: 'muted small' }, '🏁 ' + (sp.home ? settings.home.label : sp.name)),
+      sp && h('label', { class: 'check' }, h('input', { type: 'checkbox', checked: R.back, onchange: e => { R.back = e.target.checked; draw(); } }), t('Sonunda başladığım yere dön')),
+      !settings.home && h('p', { class: 'muted small' }, t("Ayarlar'dan ev konumunu girersen rotaya evden başlayabilirsin.")));
+  }
+
+  // fromMap: haritaya dokunarak eklendiyse görünüm değişmesin (art arda işaretlemek kolay olsun)
+  const addCity = (r, fromMap = false) => {
+    if (R.cities.length >= MAX_ROUTE_STOPS) { toast(t('En fazla {n} durak eklenebilir.', { n: MAX_ROUTE_STOPS })); return; }
+    R.cities.push(routeCity(r));
+    toast(t('{p} rotaya eklendi', { p: r.name }));
+    renderList(); draw(!fromMap);
+  };
+
+  function renderList() {
+    const move = (i, j) => { [R.cities[i], R.cities[j]] = [R.cities[j], R.cities[i]]; renderList(); draw(); };
+    const nightText = n => (n ? t('gece') : t('yol üstü uğrama'));
+    list.replaceChildren(...R.cities.map((city, i) => {
+      const label = h('span', { class: 'muted small' }, nightText(city.nights));
+      return h('div', { class: 'rt-item' },
+        h('div', { class: 'rt-item-head' },
+          h('span', { class: 'rt-dot' }, String(i + 1)),
+          h('b', { class: 'rt-name' }, city.name),
+          h('button', { class: 'icon-btn', type: 'button', 'aria-label': t('{p}: rotadan çıkar', { p: city.name }), onclick: () => { R.cities.splice(i, 1); renderList(); draw(); } }, '✕')),
+        h('div', { class: 'rt-item-ctl' },
+          stepper(city.nights, 0, 14, v => { city.nights = v; label.textContent = nightText(v); updDur(); }, t('{p}: gece', { p: city.name })),
+          label,
+          h('span', { class: 'rt-arrows' },
+            i > 0 && h('button', { class: 'icon-btn', type: 'button', 'aria-label': t('Önce git'), onclick: () => move(i, i - 1) }, '↑'),
+            i < R.cities.length - 1 && h('button', { class: 'icon-btn', type: 'button', 'aria-label': t('Sonra git'), onclick: () => move(i, i + 1) }, '↓'))));
+    }));
+    updDur();
+  }
+
+  function draw(fit = true) {
+    if (!map) return;
+    layer.clearLayers();
+    const sp = startPoint();
+    const pts = [sp, ...R.cities, sp && R.back ? sp : null].filter(Boolean);
+    if (pts.length > 1) L.polyline(pts.map(p => [p.lat, p.lon]), { color: '#0f766e', weight: 3, opacity: 0.7, dashArray: '6 8' }).addTo(layer);
+    if (sp) L.marker([sp.lat, sp.lon], { icon: meIcon() }).addTo(layer);
+    R.cities.forEach((p, i) => L.marker([p.lat, p.lon], { icon: numIcon(i + 1, '#0f766e') }).addTo(layer));
+    const b = pts.map(p => [p.lat, p.lon]);
+    if (!fit) return;
+    if (b.length > 1) map.fitBounds(b, { padding: [30, 30], maxZoom: 9 });
+    else if (b.length === 1) map.setView(b[0], 8);
+  }
+
+  const totalDays = () => R.cities.reduce((s, x) => s + (x.nights || 0), 0) + 1;
+  const updDur = () => {
+    const n = totalDays(), nights = n - 1;
+    const end = parseISODate(form.startDate); end.setDate(end.getDate() + n - 1);
+    dur.textContent = (n === 1 ? t('Günübirlik gezi') : t('{d} gün, {n} gece', { d: n, n: nights })) + ` · ${t('Dönüş')}: ${fmtDMY(toISODate(end))}`;
+    staySec.hidden = nights === 0;
+  };
+  const start = dateField(form.startDate, { min: todayISO(), label: t('Gidiş'), onChange: v => { form.startDate = v || todayISO(); start.set(form.startDate); updDur(); } });
+  const submit = h('button', { class: 'btn primary wide', type: 'button', onclick: go }, '🗺️ ' + t('Rotayı oluştur'));
+  staySec.append(section(t('Nerede kalacaksın?'), c.stayChips()));
+
+  root.append(
+    section(t('Nereden başlıyorsun?'), startBox),
+    section(t('Hangi yerleri görmek istiyorsun?'),
+      mapEl,
+      h('p', { class: 'muted small' }, t('Haritaya dokunarak ya da aşağıdan arayarak şehir ekle. Her şehre kaç gece kalacağını yaz; 0 gece verdiğin yerlere yol üstünde birkaç saat uğranır.')),
+      placeSearch({ placeholder: t('Şehir ya da kasaba ekle…'), onPick: addCity }),
+      list,
+      h('label', { class: 'check' }, h('input', { type: 'checkbox', checked: R.optimize, onchange: e => { R.optimize = e.target.checked; } }), t('Sırayı en kısa yola göre düzenle'))),
+    section(t('Ne zaman yola çıkıyorsun?'), h('div', { class: 'field' }, h('span', {}, t('Gidiş')), start), dur),
+    c.who, c.how, c.what, c.pace, staySec, c.food,
+    submit,
+    out,
+  );
+  renderStart(); renderList();
+
+  setTimeout(() => {
+    if (!mapEl.isConnected) return;
+    const sp = startPoint();
+    map = createMap(mapEl, sp || R.cities[0] || { lat: 46.8, lon: 8.2 }, sp || R.cities[0] ? 7 : 5);
+    if (!map) return;
+    layer = L.layerGroup().addTo(map);
+    // Haritaya dokunulan yerin şehri/kasabası rotaya eklenir
+    map.on('click', async e => {
+      toast(t('Yer bulunuyor…'));
+      try {
+        const info = await reverseGeocode(e.latlng.lat, e.latlng.lng, 10);
+        if (!info?.name) { toast(t('Burada bir yerleşim bulunamadı; biraz daha yakınlaştırıp tekrar dene.')); return; }
+        addCity(info, true);
+      } catch { toast(t('Yer bulunamadı. İnternet bağlantını kontrol et.')); }
+    });
+    draw();
+  });
+  const cleanup = () => { map?.remove(); map = null; };
+  onLeave(cleanup);
+
+  async function go() {
+    const sp = startPoint();
+    if (!R.cities.length || (!sp && R.cities.length < 2)) { toast(t('Rota için en az iki yer gerekli (başlangıç ve bir durak ya da iki durak).')); return; }
+    if (!form.interests.length) { toast(t('En az bir ilgi alanı seç.')); return; }
+    if (totalDays() > MAX_ROUTE_DAYS) { toast(t('Rota en fazla {n} gün olabilir; gece sayılarını azalt.', { n: MAX_ROUTE_DAYS })); return; }
+    submit.disabled = true;
+    out.replaceChildren(spinner(t('Başlıyor…')));
+    out.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+    try {
+      const trip = await generateRoute({
+        startDate: form.startDate, start: sp, back: R.back, cities: R.cities, optimize: R.optimize,
+        travelers: travelers(), transport: form.transport, pace: form.pace, level: form.level, stay: form.stay,
+        interests: form.interests, hidden: form.hidden,
+      }, settings, msg => out.replaceChildren(spinner(msg)));
+      form = null;
+      location.hash = `#/gezi/${trip.id}`;
+    } catch (e) {
+      out.replaceChildren(h('p', { class: 'error' }, e.message));
+      submit.disabled = false;
+    }
+  }
+  return cleanup;
 }

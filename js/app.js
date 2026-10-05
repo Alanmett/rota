@@ -15,6 +15,8 @@ setCurrency(getSettings().currency);
 // index.html'deki sabit metinler (sekme adları vb.)
 for (const el of document.querySelectorAll('[data-t]')) el.textContent = t(el.dataset.t);
 document.querySelector('.tabbar').setAttribute('aria-label', t('Ana menü'));
+document.querySelector('#home-btn').setAttribute('aria-label', t('Ana sayfa'));
+document.querySelector('#home-btn').title = t('Ana sayfa');
 document.querySelector('#sheet').setAttribute('aria-label', t('Ayrıntılar'));
 
 const routes = [

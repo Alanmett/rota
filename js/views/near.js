@@ -22,9 +22,10 @@ const state = {
   loc: saved.loc || null,
   radius: saved.radius || 10,
   cats: saved.cats || ['tarihi', 'muze', 'dogal', 'manzara'],
+  hidden: !!saved.hidden,
   results: null, weather: null, view: 'list', sort: 'rank', showAll: false,
 };
-const persist = () => saveNear({ loc: state.loc, radius: state.radius, cats: state.cats });
+const persist = () => saveNear({ loc: state.loc, radius: state.radius, cats: state.cats, hidden: state.hidden });
 
 // Öner ekranından "Çevresini keşfet" ile gelindiğinde konumu ayarlar.
 export function setNearLocation(loc) {
@@ -104,7 +105,7 @@ export function renderNear(root) {
     goBtn.disabled = true;
     results.replaceChildren(spinner(t('Çevrendeki yerler aranıyor…')));
     try {
-      const found = await fetchPlaces({ lat: state.loc.lat, lon: state.loc.lon, radiusKm: state.radius, cats: state.cats });
+      const found = await fetchPlaces({ lat: state.loc.lat, lon: state.loc.lon, radiusKm: state.radius, cats: state.cats, hidden: state.hidden });
       state.results = found;
       state.showAll = false;
       renderResults();
@@ -151,7 +152,7 @@ export function renderNear(root) {
         h('b', {}, t('{n} yer bulundu', { n: all.length })),
         segmented([{ value: 'list', label: t('Liste') }, { value: 'map', label: t('Harita') }], state.view, v => { state.view = v; renderResults(); })),
       sights > 0 && h('button', { class: 'btn primary wide', onclick: planTodaySheet }, '✨ ' + t('Bunlardan bugün için plan yap')),
-      state.view === 'list' && segmented([{ value: 'rank', label: t('Öne çıkanlar') }, { value: 'near', label: t('En yakın') }], state.sort, v => { state.sort = v; renderResults(); }),
+      state.view === 'list' && segmented([{ value: 'rank', label: t('Önerilen sıra') }, { value: 'near', label: t('En yakın') }], state.sort, v => { state.sort = v; renderResults(); }),
       all.partial && h('div', { class: 'note warn' }, t('Veri kaynaklarından biri şu an yanıt vermedi; liste eksik olabilir. Biraz sonra tekrar aramayı dene.')),
       content,
       h('p', { class: 'muted small source' }, state.radius > 3
@@ -202,7 +203,7 @@ export function renderNear(root) {
           origin: state.loc.gps ? { lat: state.loc.lat, lon: state.loc.lon } : null,
           startDate: todayISO(), endDate: todayISO(),
           travelers: { adults, children, elderly: false, pet: false },
-          transport, pace, level: 'ekonomik', radiusKm: state.radius, interests: state.cats,
+          transport, pace, level: 'ekonomik', radiusKm: state.radius, interests: state.cats, hidden: state.hidden,
           places: state.results, startMin, firstDayBudget: Math.max(90, Math.min(PACES[pace].budget, left)),
         }, settings, msg => body.replaceChildren(spinner(msg)));
         closeSheet();
@@ -216,7 +217,8 @@ export function renderNear(root) {
   root.append(
     locCard,
     h('section', {}, h('h2', { class: 'h-sec' }, t('Ne kadar uzağa?')), radiusControl()),
-    h('section', {}, h('h2', { class: 'h-sec' }, t('Ne görmek istersin?')), chips(CAT_OPTIONS, state.cats, v => { state.cats = v; persist(); })),
+    h('section', {}, h('h2', { class: 'h-sec' }, t('Ne görmek istersin?')), chips(CAT_OPTIONS, state.cats, v => { state.cats = v; persist(); }),
+      h('div', { style: 'margin-top:10px' }, segmented([{ value: false, label: '⭐ ' + t('Öne çıkanlar') }, { value: true, label: '🔎 ' + t('Az bilinenler') }], state.hidden, v => { state.hidden = v; persist(); }))),
     goBtn,
     results,
   );

@@ -4,7 +4,7 @@ import { h, fill, toast, openSheet, closeSheet, segmented, chips, spinner, tappa
 import { reverseGeocode, wikiForTags } from '../api.js';
 import { suggest, KINDS, COUNTRY_NAMES, flag } from '../suggest.js';
 import { getSettings, getPref, savePref } from '../store.js';
-import { prefillPlan } from './plan.js';
+import { prefillPlan, addToRoute } from './plan.js';
 import { setNearLocation } from './near.js';
 import { placeSearch } from '../components.js';
 import { wikiMoreLabel } from '../details.js';
@@ -200,6 +200,7 @@ export function renderSuggest(root) {
       h('div', { class: 'btn-row' },
         h('button', { class: 'btn primary', onclick: () => planHere(p) }, '🗺️ ' + t('Buraya gezi planla')),
         h('button', { class: 'btn', onclick: () => exploreHere(p) }, '🧭 ' + t('Çevresini keşfet')),
+        h('button', { class: 'btn', onclick: () => routeHere(p) }, '➕ ' + t('Rotaya ekle')),
         linkBtn('📗 ' + t('Gezi rehberi'), `https://www.wikidata.org/wiki/Special:GoToLinkedPage/${getLang()}wikivoyage/${p.q}`))));
     wikiForTags({ wikidata: p.q }).then(w => {
       if (!info.isConnected) return;
@@ -224,6 +225,13 @@ export function renderSuggest(root) {
     closeSheet();
     location.hash = '#/planla';
     toast(t('Plan formu dolduruldu; tarihleri ve kişileri kontrol et.'));
+  }
+
+  // Birkaç öneriyi toplayıp tek rota yapmak için: yer Planla'daki rota listesine eklenir
+  function routeHere(p) {
+    const n = addToRoute(asDest(p));
+    closeSheet();
+    toast(n ? t('{p} rotaya eklendi ({n} durak). Rotayı Planla sekmesinde tamamla.', { p: p.name, n }) : t('Rotada yer kalmadı.'), 4000);
   }
 
   function exploreHere(p) {

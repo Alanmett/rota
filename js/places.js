@@ -13,13 +13,16 @@ export const CATS = {
   plaj: { label: t('Plaj & koy'), emoji: '🏖️' },
   park: { label: t('Park & bahçe'), emoji: '🌳' },
   aile: { label: t('Aile & eğlence'), emoji: '🎡' },
+  sarap: { label: t('Şarap & bira'), emoji: '🍷' },
   alisveris: { label: t('Alışveriş'), emoji: '🛍️' },
   yemek: { label: t('Yemek'), emoji: '🍽️' },
   kafe: { label: t('Kafe'), emoji: '☕' },
 };
-export const SIGHT_CATS = ['tarihi', 'muze', 'dogal', 'manzara', 'dini', 'plaj', 'park', 'aile', 'alisveris'];
+export const SIGHT_CATS = ['tarihi', 'muze', 'dogal', 'manzara', 'dini', 'plaj', 'park', 'aile', 'sarap', 'alisveris'];
 // Alışveriş yeri mi (tarihi çarşı gibi hem tarihi hem alışveriş olan yerler gezilecek yer sayılır)
 export const isShop = p => p.cats[0] === 'alisveris';
+// Bağ, şaraphane, bira ve damıtımevleri: tadım çoğu yerde randevuyla
+export const DRINK_TYPES = new Set(['winery', 'vineyard', 'champagne', 'brewery', 'trappist', 'distillery', 'cider']);
 
 // tür: [etiket, ortalama ziyaret süresi (dk), genelde ücretli mi]
 export const TYPES = {
@@ -47,6 +50,9 @@ export const TYPES = {
   outlet: ['Outlet', 150, false], mall: ['Alışveriş merkezi', 90, false], department_store: ['Büyük mağaza', 60, false],
   market: ['Pazar yeri', 45, false], market_hall: ['Kapalı çarşı / hal', 45, false], bazaar: ['Çarşı', 60, false],
   flea_market: ['Bit pazarı', 60, false], shopping_street: ['Alışveriş caddesi', 60, false],
+  winery: ['Şaraphane / bağ evi', 90, true], vineyard: ['Bağ', 30, false], champagne: ['Şampanya evi', 90, true],
+  brewery: ['Bira üreticisi', 75, true], trappist: ['Manastır birası üreticisi', 75, true],
+  distillery: ['Damıtımevi (viski, likör…)', 75, true], cider: ['Elma şarabı (cidre) üreticisi', 60, true],
   restaurant: ['Restoran', 60, false], cafe: ['Kafe', 40, false],
 };
 
@@ -60,7 +66,8 @@ const TYPE_EMOJI = {
   beach: '🏖️', bay: '🏝️', viewpoint: '🌄', park: '🌳', garden: '🌷',
   zoo: '🦁', theme_park: '🎢', aquarium: '🐠', water_park: '🌊', restaurant: '🍽️', cafe: '☕',
   outlet: '🛍️', mall: '🏬', department_store: '🏬', market: '🧺', market_hall: '🧺', bazaar: '🛍️', flea_market: '🧺',
-  shopping_street: '🛍️',
+  shopping_street: '🛍️', winery: '🍷', vineyard: '🍇', champagne: '🥂', brewery: '🍺', trappist: '🍺',
+  distillery: '🥃', cider: '🍏',
 };
 
 export const typeLabel = p => t(TYPES[p.type]?.[0] || 'Yer');
@@ -102,7 +109,8 @@ const CLAUSES = {
     'nwr["leisure"~"^(park|garden)$"]["tourism"="attraction"]["name"]{b};',
   ],
   aile: ['nwr["tourism"~"^(zoo|theme_park|aquarium)$"]["name"]{b};', 'nwr["leisure"="water_park"]["name"]{b};'],
-  alisveris: [], // her mesafede Nominatim'den (fetchShopping)
+  alisveris: [], // her mesafede Nominatim'den (fetchExtras)
+  sarap: [],
   yemek: ['nwr["amenity"="restaurant"]["name"]{b};'],
   kafe: ['nwr["amenity"="cafe"]["name"]{b};'],
 };
@@ -117,6 +125,10 @@ function classify(t) {
   else if (t.shop === 'mall') { add('alisveris'); type = OUTLET_NAME.test(t.name || '') ? 'outlet' : 'mall'; }
   else if (t.shop === 'department_store') { add('alisveris'); type = 'department_store'; }
   else if (t.amenity === 'marketplace') { add('alisveris'); type = 'market'; }
+  else if (t.craft === 'winery') { add('sarap'); type = 'winery'; }
+  else if (t.craft === 'brewery' || t.industrial === 'brewery') { add('sarap'); type = TRAPPIST_NAME.test(t.name || '') ? 'trappist' : 'brewery'; }
+  else if (t.craft === 'distillery') { add('sarap'); type = 'distillery'; }
+  else if (t.craft === 'cider') { add('sarap'); type = 'cider'; }
   else if (t.tourism === 'museum' || t.tourism === 'gallery') { add('muze'); type = t.tourism; }
   else if (['zoo', 'theme_park', 'aquarium'].includes(t.tourism) || t.leisure === 'water_park') {
     add('aile'); type = t.leisure === 'water_park' ? 'water_park' : t.tourism;
@@ -147,7 +159,11 @@ const TYPE_BOOST = {
 
 // Önem ölçüsü: bir yerin kaç dilde Wikipedia maddesi olduğu. Her kaynaktan gelen yer bu ortak ölçüyle puanlanır;
 // böylece OSM'de çok ayrıntılı etiketlenmiş küçük bir müze, dünyaca bilinen bir yerin önüne geçmez.
-const popularity = (sitelinks, hasTr) => 2.2 * Math.log(1 + sitelinks) + (hasTr ? 0.5 : 0);
+// "Az bilinen yerler" modunda ise ünlülük belli bir noktadan sonra puan kazandırmaz, çok ünlü yerler geri planda kalır:
+// tek tük maddesi olan, turist kalabalığından uzak ama kaydı olan yerler öne çıkar.
+const popularity = (sitelinks, hasTr, hidden = false) => hidden
+  ? 2.2 * Math.log(1 + Math.min(sitelinks, 6)) + (hasTr ? 0.3 : 0) - 1.5 * Math.log(1 + Math.max(0, sitelinks - 20) / 10)
+  : 2.2 * Math.log(1 + sitelinks) + (hasTr ? 0.5 : 0);
 
 // OSM'nin kendi sinyalleri (koruma statüsü, turistik etiketi vb.); önem puanı ayrıca eklenir.
 function osmBase(t, type) {
@@ -247,18 +263,22 @@ const WD_TYPES = {
   Q11315: ['alisveris', 'mall'], Q31374404: ['alisveris', 'mall'], Q54927709: ['alisveris', 'outlet'],
   Q216107: ['alisveris', 'department_store'], Q2080521: ['alisveris', 'market_hall'], Q219760: ['alisveris', 'bazaar'],
   Q385870: ['alisveris', 'flea_market'], Q21000333: ['alisveris', 'shopping_street'],
+  Q156362: ['sarap', 'winery'], Q2318315: ['sarap', 'winery'], Q22715: ['sarap', 'vineyard'], Q19347489: ['sarap', 'champagne'],
+  Q131734: ['sarap', 'brewery'], Q57778855: ['sarap', 'brewery'], Q27825807: ['sarap', 'trappist'],
+  Q1251750: ['sarap', 'distillery'], Q10373548: ['sarap', 'distillery'], Q5119518: ['sarap', 'cider'],
   Q570116: ['gezi', 'attraction'],
 };
-const GENERIC = new Set(['attraction', 'historic', 'bridge']); // birden fazla tür varsa daha özel olan seçilir
+const GENERIC = new Set(['attraction', 'historic', 'bridge', 'vineyard', 'brewery']); // birden fazla tür varsa daha özel olan seçilir
 const NOISY_NATURE = new Set(['peak', 'water', 'plateau', 'spring']); // botların ürettiği tek satırlık maddeler çok
 const MINOR_IF_OBSCURE = new Set(['mosque', 'church', 'tomb', 'bridge', 'clock_tower', 'monument', 'park']);
 const GENERIC_NAME = /^(köprü|cami|camii|mescit|kilise|türbe|çeşme|han|hamam|kale|bridge|mosque|church)(\s*\d+)?$/i;
 
-async function fetchWikidataPlaces(lat, lon, radiusKm, sightCats) {
+async function fetchWikidataPlaces(lat, lon, radiusKm, sightCats, hidden = false) {
   const want = new Set([...sightCats, 'gezi']);
   const ids = Object.keys(WD_TYPES).filter(q => want.has(WD_TYPES[q][0]) || (WD_TYPES[q][0] === 'dini' && want.has('tarihi')));
   // Geniş alanda yalnızca daha bilinen yerler (aksi halde binlerce küçük kayıt gelir).
-  const minSl = radiusKm <= 15 ? 1 : radiusKm <= 60 ? 3 : 5;
+  // "Az bilinen yerler" modunda eşik düşük tutulur ki küçük ama kaydı olan yerler de gelsin.
+  const minSl = hidden ? (radiusKm <= 15 ? 1 : 2) : radiusKm <= 15 ? 1 : radiusKm <= 60 ? 3 : 5;
   const items = await wikidataAround(lat, lon, radiusKm, ids, minSl);
   const typed = [];
   for (const it of items) {
@@ -266,9 +286,11 @@ async function fetchWikidataPlaces(lat, lon, radiusKm, sightCats) {
     const best = mapped.find(([, type]) => !GENERIC.has(type)) || mapped[0];
     if (best) typed.push({ ...it, cat: best[0], type: best[1] });
   }
-  // Ad sorgusu yalnızca en önemli 200 yer için
+  // Ad sorgusu yalnızca 200 yer için: normalde en bilinenler; "az bilinen" modunda ağırlık orta derecede bilinenlerde
   typed.sort((a, b) => b.sitelinks - a.sitelinks);
-  const top = typed.slice(0, 200);
+  const top = hidden
+    ? [...typed.filter(r => r.sitelinks > 25).slice(0, 30), ...typed.filter(r => r.sitelinks <= 25).slice(0, 170)]
+    : typed.slice(0, 200);
   const labels = await wikidataLabels(top.map(r => r.qid));
   const out = [];
   for (const it of top) {
@@ -281,7 +303,7 @@ async function fetchWikidataPlaces(lat, lon, radiusKm, sightCats) {
     const cats = [r.cat];
     if (r.cat === 'dini') cats.push('tarihi'); // Wikipedia'da maddesi olan cami/kilise çoğunlukla tarihi
     if (r.type === 'bedesten') cats.push('alisveris');
-    let s = 1 + popularity(r.sitelinks, !!r.trTitle) + (TYPE_BOOST[r.type] || 0);
+    let s = 1 + popularity(r.sitelinks, !!r.trTitle, hidden) + (TYPE_BOOST[r.type] || 0);
     if (r.type === 'archaeological_site' && r.sitelinks < 3) s -= 2; // görünür kalıntısı olmayan antik yerleşimler
     if (MINOR_IF_OBSCURE.has(r.type) && r.sitelinks <= 1) s -= 1.2; // tek maddeli mahalle camisi, küçük köprü vb.
     out.push({
@@ -323,34 +345,52 @@ export async function enrichHours(places, limit = 60) {
 const OUTLET_NAME = /outlet|factory stores?|designer village|\bvillage\b/i;
 const NOT_SHOPPING = /raststätte|rastplatz|autogrill|area di servizio|aire de service|tankstelle|parking|parcheggio/i;
 
-function nomShop(r, i, n, type) {
+function nomPlace(r, i, n, cat, type) {
   const ex = r.extratags || {};
   const tags = { name: r.name };
-  for (const k of ['opening_hours', 'website', 'contact:website', 'phone', 'wikidata', 'wheelchair']) if (ex[k]) tags[k] = ex[k];
+  for (const k of ['opening_hours', 'website', 'contact:website', 'phone', 'wikidata', 'wheelchair', 'fee']) if (ex[k]) tags[k] = ex[k];
   // Nominatim sonuçları önem sırasıyla gelir; sıradaki yeri de hesaba katılır
-  const base = 1 + (1 - i / n) * 0.8 + (type === 'outlet' ? 1.5 : 0) + (ex.opening_hours ? (type === 'market' ? 0.6 : 0.2) : 0)
-    + (ex.website || ex['contact:website'] ? 0.2 : 0);
+  let base = 1 + (1 - i / n) * 0.8 + (ex.website || ex['contact:website'] ? 0.2 : 0);
+  if (type === 'outlet') base += 1.5;
+  if (ex.opening_hours) base += type === 'market' ? 0.6 : 0.2;
+  // Ziyaretçi kabul ettiği belli olan üreticiler (tadım mahzeni, turistik yer, çalışma saati) öne
+  if (cat === 'sarap') base += (ex.tourism ? 0.6 : 0) + (ex.opening_hours ? 0.3 : 0) + (ex.website || ex['contact:website'] ? 0.2 : 0);
   return {
-    id: (r.osm_type || 'n')[0] + r.osm_id, name: r.name, lat: +r.lat, lon: +r.lon, cats: ['alisveris'], type,
+    id: (r.osm_type || 'n')[0] + r.osm_id, name: r.name, lat: +r.lat, lon: +r.lon, cats: [cat], type,
     dur: TYPES[type][1], score: base + (ex.wikidata ? 1.5 : 0), _base: base, hours: ex.opening_hours || null, tags,
   };
 }
 
-async function fetchShopping(lat, lon, radiusKm) {
+const TRAPPIST_NAME = /trapp|abbaye|abdij|abbey|kloster|abbazia/i;
+
+// Wikidata'da kaydı olmayan yerler OSM'den (Nominatim): AVM/outlet ve pazar yerleri, bağ evleri, bira ve damıtımevleri.
+// Wikidata ünlüleri (Pommery, Cantillon, Glenfiddich…), OSM küçük aile işletmelerini (Kapadokya, Bozcaada, Chianti) getirir.
+async function fetchExtras(lat, lon, radiusKm, sight) {
   const out = [];
-  const malls = (await nominatimNearby('mall', lat, lon, radiusKm * 1000, 40))
-    .filter(r => r.category === 'shop' && r.type === 'mall' && r.name && !NOT_SHOPPING.test(r.name));
-  malls.forEach((r, i) => out.push(nomShop(r, i, malls.length, OUTLET_NAME.test(r.name) ? 'outlet' : 'mall')));
-  // Pazar yerleri: uzaktaki semt pazarına gidilmez; en fazla 10 km
-  try {
-    const markets = (await nominatimNearby('marketplace', lat, lon, Math.min(radiusKm, 10) * 1000, 25))
-      .filter(r => r.category === 'amenity' && r.type === 'marketplace' && r.name && !NOT_SHOPPING.test(r.name));
-    markets.forEach((r, i) => out.push(nomShop(r, i, markets.length, 'market')));
-  } catch { /* AVM'lerle devam */ }
+  const take = async (what, km, limit, keep, cat, typeOf) => {
+    try {
+      const rows = (await nominatimNearby(what, lat, lon, km * 1000, limit)).filter(r => r.name && keep(r) && !NOT_SHOPPING.test(r.name));
+      rows.forEach((r, i) => out.push(nomPlace(r, i, rows.length, cat, typeOf(r))));
+      return true;
+    } catch { return false; }
+  };
+  const ok = [];
+  if (sight.includes('alisveris')) {
+    ok.push(await take('mall', radiusKm, 40, r => r.category === 'shop' && r.type === 'mall', 'alisveris', r => (OUTLET_NAME.test(r.name) ? 'outlet' : 'mall')));
+    // Pazar yerleri: uzaktaki semt pazarına gidilmez; en fazla 10 km
+    ok.push(await take('marketplace', Math.min(radiusKm, 10), 25, r => r.category === 'amenity' && r.type === 'marketplace', 'alisveris', () => 'market'));
+  }
+  if (sight.includes('sarap')) {
+    ok.push(await take('winery', radiusKm, 40, r => r.category === 'craft' && r.type === 'winery', 'sarap', () => 'winery'));
+    ok.push(await take('brewery', radiusKm, 30, r => (r.category === 'craft' || r.category === 'industrial') && r.type === 'brewery', 'sarap',
+      r => (TRAPPIST_NAME.test(r.name) ? 'trappist' : 'brewery')));
+    ok.push(await take('distillery', radiusKm, 20, r => r.category === 'craft' && r.type === 'distillery', 'sarap', () => 'distillery'));
+  }
+  if (ok.length && !ok.some(Boolean)) throw new Error('nominatim');
   return out;
 }
 
-export async function fetchPlaces({ lat, lon, radiusKm, cats }) {
+export async function fetchPlaces({ lat, lon, radiusKm, cats, hidden = false }) {
   const sight = cats.filter(c => SIGHT_CATS.includes(c));
   const food = cats.filter(c => c === 'yemek' || c === 'kafe');
   if (!sight.length && !food.length) return [];
@@ -367,8 +407,8 @@ export async function fetchPlaces({ lat, lon, radiusKm, cats }) {
   let osmErr = null, wdErr = null, shopErr = null;
   const [osmDetail, wd, shops] = await Promise.all([
     parts.length ? overpass(query(parts, 1000), 20000).then(d => parseElements(d.elements)).catch(e => { osmErr = e; return []; }) : [],
-    sight.length ? fetchWikidataPlaces(lat, lon, radiusKm, sight).catch(e => { wdErr = e; return []; }) : [],
-    sight.includes('alisveris') ? fetchShopping(lat, lon, radiusKm).catch(e => { shopErr = e; return []; }) : [],
+    sight.length ? fetchWikidataPlaces(lat, lon, radiusKm, sight, hidden).catch(e => { wdErr = e; return []; }) : [],
+    sight.includes('alisveris') || sight.includes('sarap') ? fetchExtras(lat, lon, radiusKm, sight).catch(e => { shopErr = e; return []; }) : [],
   ]);
   const osm = [...osmDetail, ...shops];
   if (!osm.length && !wd.length && (osmErr || wdErr || shopErr)) throw osmErr || wdErr || shopErr;
@@ -381,7 +421,7 @@ export async function fetchPlaces({ lat, lon, radiusKm, cats }) {
   }
   for (const p of osm) {
     const n = sl.get(p.tags.wikidata);
-    if (n != null) p.score = p._base + popularity(n, (p.tags.wikipedia || '').startsWith(`${getLang()}:`));
+    if (n != null) p.score = p._base + popularity(n, (p.tags.wikipedia || '').startsWith(`${getLang()}:`), hidden);
   }
 
   // Aynı Wikidata kimliğine sahip OSM kaydı varsa birleştir (OSM'nin saat bilgisi + Wikidata'nın türü/kategorisi).

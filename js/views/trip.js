@@ -4,7 +4,7 @@ import { h, fill, toast, openSheet, closeSheet, setTitle, onLeave, linkBtn, empt
 import { getTrip, saveTrip, deleteTrip, getSettings } from '../store.js';
 import { computeTimeline, gmapsDayLink, gmapsDir, bestInsertIndex, PACES, TRANSPORTS, LEG_EMOJI } from '../planner.js';
 import { computeBudget, STAYS, stayOf, FOODS, foodOf, savingTips, factorNote, destCurrency, ticketInfo } from '../budget.js';
-import { buildTips } from '../tips.js';
+import { tripTips } from '../tips.js';
 import { refreshWeather, addParking } from '../tripgen.js';
 import { typeLabel, catEmoji, cuisineLabel } from '../places.js';
 import { showPlaceDetail, wikiMoreLabel, parkLink } from '../details.js';
@@ -51,7 +51,17 @@ export function renderTrip(root, id, tab) {
 // Yurt dışı gezisinde ülke bilgisi alınamamışsa (servis o an yanıt vermediyse) yeniden dener.
 async function maybeAddCountry(ctx) {
   const { trip, settings } = ctx;
-  if (trip.country || !trip.dest.cc || trip.dest.cc === settings.homeCountry || !navigator.onLine) return;
+  if (!navigator.onLine) return;
+  if (trip.route) {
+    trip.countries ||= {};
+    const missing = [...new Set(trip.days.map(d => d.cc))].filter(cc => cc && cc !== settings.homeCountry && !trip.countries[cc]);
+    if (!missing.length) return;
+    await Promise.all(missing.map(cc => countryInfo(cc).then(c => { trip.countries[cc] = c; }).catch(() => {})));
+    ctx.save();
+    if (ctx.body.isConnected) ctx.rerender();
+    return;
+  }
+  if (trip.country || !trip.dest.cc || trip.dest.cc === settings.homeCountry) return;
   try {
     trip.country = await countryInfo(trip.dest.cc);
     ctx.save();
@@ -87,14 +97,45 @@ function tripHeader(trip) {
   const tr = trip.travelers;
   const who = [t('{n} yetişkin', { n: tr.adults }), tr.children ? t('{n} çocuk', { n: tr.children }) : null].filter(Boolean).join(', ');
   const tp = TRANSPORTS[trip.transport];
+  const nights = trip.route ? trip.days.filter(d => d.sleep).length : trip.days.length - 1;
   return h('section', { class: 'trip-head' },
-    h('div', { class: 'muted small' }, `📍 ${trip.dest.label || trip.dest.name}`),
+    h('div', { class: 'muted small' }, `${trip.route ? '🗺️' : '📍'} ${trip.dest.label || trip.dest.name}`),
     h('div', { class: 'trip-meta' },
       h('span', {}, fmtRange(trip.startDate, trip.endDate)),
-      h('span', {}, trip.days.length === 1 ? t('Günübirlik') : t('{d} gün, {n} gece', { d: trip.days.length, n: trip.days.length - 1 })),
+      h('span', {}, trip.days.length === 1 ? t('Günübirlik') : t('{d} gün, {n} gece', { d: trip.days.length, n: nights })),
       h('span', {}, who),
       h('span', {}, `${tp.emoji} ${tp.label}`),
-      h('span', {}, PACES[trip.pace]?.label || '')));
+      h('span', {}, PACES[trip.pace]?.label || ''),
+      trip.hidden && h('span', {}, '🔎 ' + t('Az bilinen yerler'))));
+}
+
+// Rota özeti: şehirler sırasıyla, gece sayıları, yol süreleri ve konaklama araması
+function routeCard(trip) {
+  const r = trip.route;
+  const seq = [r.start && { ...r.start, key: 's' }, ...r.cities, r.end && { ...r.end, key: 'e' }].filter(Boolean);
+  const road = (a, b) => r.roads?.[`${a.key}>${b.key}`];
+  const rows = [];
+  seq.forEach((c, i) => {
+    if (i > 0) {
+      const rd = road(seq[i - 1], c);
+      if (rd) rows.push(h('div', { class: 'rt-leg muted small' }, `${trip.transport === 'araba' ? '🚗' : '🚆'} ${fmtDur(rd.min)} · ${fmtKm(rd.km)}`));
+    }
+    const ends = c.key === 's' || c.key === 'e';
+    rows.push(h('div', { class: 'rt-city' },
+      h('span', { class: 'rt-dot' + (ends ? ' end' : ''), 'aria-hidden': 'true' }, ends ? '🏁' : String(+c.key + 1)),
+      h('div', { class: 'rt-main' },
+        h('b', {}, c.name),
+        h('div', { class: 'muted small' }, ends ? (c.key === 's' ? t('Başlangıç') : t('Dönüş'))
+          : c.nights ? t('{n} {n:gece|gece}', { n: c.nights }) : t('Yol üstü uğrama'))),
+      !ends && c.nights > 0 && linkBtn('🛏️ ' + t('Konaklama ara'), `https://www.google.com/maps/search/${encodeURIComponent(t('otel'))}/@${c.lat},${c.lon},13z`, 'btn small')));
+  });
+  return h('section', { class: 'card route-card' },
+    h('div', { class: 'cost-head' },
+      h('div', {}, h('div', { class: 'muted small' }, t('Rota')), h('b', {}, t('{n} durak', { n: r.cities.length }))),
+      r.totalKm > 0 && h('div', { class: 'muted small' }, t('Toplam yol {km} · {d}', { km: fmtKm(r.totalKm), d: fmtDur(r.totalMin) }))),
+    r.reordered && h('p', { class: 'muted small' }, t('Duraklar en kısa yola göre yeniden sıralandı.')),
+    h('div', { class: 'rt-list' }, rows),
+    h('a', { class: 'cost-more small', href: `#/gezi/${trip.id}/harita` }, t('Rotayı haritada gör') + ' →'));
 }
 
 // ---------------- Plan ----------------
@@ -107,6 +148,7 @@ function renderPlanTab(body, ctx) {
     body.append(h('div', { class: 'note warn' }, t('Plana yer eklenemedi. Aşağıdaki listeden ekleyebilir ya da daha geniş bir alanla yeniden plan yapabilirsin.')));
   }
   ctx.budget = computeBudget(trip, ctx.settings);
+  if (trip.route) body.append(routeCard(trip));
   body.append(costCard(ctx));
   trip.days.forEach((_, di) => body.append(dayCard(ctx, di)));
   const alts = altSection(ctx);
@@ -141,11 +183,20 @@ function dayCard(ctx, di) {
   if (di === 0 && trip.origin && day.stops.length) {
     list.append(h('li', { class: 'tl-start' }, h('div', { class: 'tl-time' }, fmtClock(day.startMin)), h('div', { class: 'tl-num me', 'aria-hidden': 'true' }), h('div', { class: 'tl-body' }, h('div', { class: 'tl-meta' }, t('Bulunduğun yerden çıkış')))));
   }
+  if (day.from) { // rota: günün çıkış noktası (ev ya da önceki gecenin şehri)
+    list.append(h('li', { class: 'tl-start' }, h('div', { class: 'tl-time' }, fmtClock(day.startMin)), h('div', { class: 'tl-num me', 'aria-hidden': 'true' }),
+      h('div', { class: 'tl-body' }, h('div', { class: 'tl-meta' }, t('{p} çıkış', { p: day.from.name })))));
+  }
   for (const it of tl.items) {
     if (it.kind === 'leg') {
-      list.append(h('li', { class: 'tl-leg' }, h('span', { class: 'line' }), h('span', { class: 'txt' }, `${LEG_EMOJI[it.mode]} ${fmtDur(it.min)} · ${fmtKm(it.km)}`)));
+      list.append(h('li', { class: 'tl-leg' + (it.road ? ' road' : '') }, h('span', { class: 'line' }),
+        h('span', { class: 'txt' }, `${LEG_EMOJI[it.mode]} ${it.to ? it.to + ' · ' : ''}${fmtDur(it.min)} · ${fmtKm(it.km)}`)));
     } else if (it.kind === 'lunch') {
       list.append(mealItem(t('Öğle yemeği'), it.start, day.lunch));
+    } else if (it.kind === 'sleep' || it.kind === 'end') {
+      list.append(h('li', { class: 'tl-start' }, h('div', { class: 'tl-time' }, fmtClock(it.start)),
+        h('div', { class: 'tl-num meal', 'aria-hidden': 'true' }, it.kind === 'sleep' ? '🛏️' : '🏁'),
+        h('div', { class: 'tl-body' }, h('div', { class: 'tl-name' }, it.kind === 'sleep' ? t('Gece: {p}', { p: it.place.name }) : t('Varış: {p}', { p: it.place.name })))));
     } else {
       n++;
       if (it.parkHere) { const pk = parkingItem(trip, it.id); if (pk) list.append(pk); }
@@ -157,11 +208,14 @@ function dayCard(ctx, di) {
   const total = tl.visitMin + tl.travelMin;
   const limit = di === 0 && trip.kind === 'today' ? Infinity : PACES[trip.pace].budget * 1.2;
   const route = gmapsDayLink(trip, di);
+  const where = trip.route && (day.sleep?.name || day.to?.name);
+  const longDrive = (day.drive || 0) > 480;
   return h('section', { class: 'day', style: `--day:${color(di)}` },
     h('header', { class: 'day-head' },
-      h('div', {}, h('div', { class: 'day-num' }, dayLabel(di + 1)), h('div', { class: 'day-date' }, fmtDayLong(day.date))),
+      h('div', {}, h('div', { class: 'day-num' }, dayLabel(di + 1) + (where ? ` · ${where}` : '')), h('div', { class: 'day-date' }, fmtDayLong(day.date))),
       wx && wxPill(wx, trip.weather.source)),
-    day.stops.length ? list : h('p', { class: 'muted day-empty' }, t('Bu güne henüz yer eklenmedi. Aşağıdaki "Vakit kalırsa" listesinden ekleyebilirsin.')),
+    longDrive && h('div', { class: 'note warn day-note' }, t('Bu gün {d} yol var. Arada bir şehirde gece kalmayı düşün.', { d: fmtDur(day.drive) })),
+    day.stops.length || (trip.route && tl.items.length) ? list : h('p', { class: 'muted day-empty' }, t('Bu güne henüz yer eklenmedi. Aşağıdaki "Vakit kalırsa" listesinden ekleyebilirsin.')),
     day.stops.length > 0 && h('footer', { class: 'day-foot' },
       h('span', {}, t('Gezi {v} · yol {r} · bitiş ~{e}', { v: fmtDur(tl.visitMin), r: fmtDur(tl.travelMin), e: fmtClock(tl.end) })),
       trip.days.length > 1 && ctx.budget && h('span', { class: 'day-cost' }, '💰 ' + t('Bu gün ~{p}', { p: fmtMoney(ctx.budget.perDay[di]) })),
@@ -242,7 +296,7 @@ function altSection(ctx) {
       h('span', { class: 'emoji', 'aria-hidden': 'true' }, catEmoji(p)),
       tappable({ class: 'alt-main', onclick: () => showPlaceDetail(p) },
         h('div', { class: 'pc-name' }, p.name),
-        h('div', { class: 'muted small' }, `${typeLabel(p)} · ~${fmtDur(p.dur)}`)),
+        h('div', { class: 'muted small' }, `${typeLabel(p)} · ~${fmtDur(p.dur)}${trip.route?.cities?.[p.city] ? ' · ' + trip.route.cities[p.city].name : ''}`)),
       h('button', { class: 'icon-btn add', 'aria-label': t('{p}: plana ekle', { p: p.name }), onclick: () => addAlt(ctx, p.id) }, '+'))));
 }
 
@@ -298,11 +352,34 @@ function renderMapTab(body, ctx) {
     if (!map) return;
     layer.clearLayers();
     const bounds = [];
+    const r = trip.route;
+    // Rota: gerçek yol çizgisi ve şehirler (numaralı); duraklar "Tümü"nde küçük simgelerle
+    if (r && filter === 'all') {
+      const seq = [r.start, ...r.cities, r.end].filter(Boolean);
+      L.polyline(r.geo?.length ? r.geo : seq.map(c => [c.lat, c.lon]), { color: '#0f766e', weight: 5, opacity: 0.8 }).addTo(layer);
+      r.cities.forEach(c => {
+        const el = document.createElement('div');
+        el.append(h('b', {}, c.name), h('div', { class: 'muted small' }, c.nights ? t('{n} {n:gece|gece}', { n: c.nights }) : t('Yol üstü uğrama')));
+        L.marker([c.lat, c.lon], { icon: numIcon(+c.key + 1, '#0f766e'), zIndexOffset: 500 }).bindPopup(el).addTo(layer);
+        bounds.push([c.lat, c.lon]);
+      });
+      if (r.start) { L.marker([r.start.lat, r.start.lon], { icon: meIcon() }).bindPopup(t('Başlangıç')).addTo(layer); bounds.push([r.start.lat, r.start.lon]); }
+    }
     trip.days.forEach((d, di) => {
       if (filter !== 'all' && filter !== di) return;
       const pts = d.stops.map(id => trip.places[id]).filter(Boolean);
-      const line = (di === 0 && trip.origin ? [trip.origin, ...pts] : pts).map(p => [p.lat, p.lon]);
+      if (r && filter === 'all') {
+        pts.forEach(p => L.marker([p.lat, p.lon], { icon: emojiIcon(catEmoji(p)) })
+          .bindPopup(popupFor(p, dayLabel(di + 1), () => showPlaceDetail(p, { date: d.date }))).addTo(layer));
+        return;
+      }
+      const ends = [d.from, ...pts, d.to || (pts.length ? null : d.sleep)].filter(Boolean);
+      const line = (di === 0 && trip.origin ? [trip.origin, ...pts] : r ? ends : pts).map(p => [p.lat, p.lon]);
       if (line.length > 1) L.polyline(line, { color: color(di), weight: 4, opacity: 0.75, dashArray: '6 8' }).addTo(layer);
+      if (r) for (const e of [d.from, d.to, d.sleep].filter(Boolean)) {
+        L.marker([e.lat, e.lon], { icon: emojiIcon(e === d.sleep ? '🛏️' : '🏁') }).bindPopup(e.name).addTo(layer);
+        bounds.push([e.lat, e.lon]);
+      }
       pts.forEach((p, i) => {
         L.marker([p.lat, p.lon], { icon: numIcon(i + 1, color(di)) })
           .bindPopup(popupFor(p, t('{d}. gün · {s}. durak', { d: di + 1, s: i + 1 }), () => showPlaceDetail(p, { date: d.date }))).addTo(layer);
@@ -348,7 +425,9 @@ function renderBudgetTab(body, ctx) {
   const nights = trip.days.length - 1;
   const stay = stayOf(trip);
   const country = trip.dest.cc ? new Intl.DisplayNames([locale()], { type: 'region' }).of(trip.dest.cc.toUpperCase()) : '';
-  const note = trip.dest.cc ? factorNote(trip, settings, country) : null;
+  const multi = trip.route && new Set(trip.days.map(d => d.cc).filter(Boolean)).size > 1;
+  const note = multi ? t('Rota birden fazla ülkeden geçiyor: konaklama, yemek ve diğer harcamalar her günün ülkesindeki fiyat seviyesine göre hesaplandı.')
+    : trip.dest.cc ? factorNote(trip, settings, country) : null;
   const tips = savingTips(trip, settings);
   // Gidilen ülkenin parasıyla yaklaşık karşılık (ör. Fransa'da fiyatları euro olarak düşünenler için)
   const local = destCurrency(trip.dest.cc);
@@ -413,16 +492,27 @@ function budgetLine(l, ctx) {
 }
 
 // ---------------- Bilgiler ----------------
+const wikiCard = d => h('section', { class: 'card wiki-card' },
+  d.thumb && h('img', { src: d.thumb, alt: '', class: 'wiki-thumb', loading: 'lazy' }),
+  h('h2', {}, d.title),
+  h('p', {}, d.extract),
+  h('a', { href: d.url, target: '_blank', rel: 'noopener', class: 'small' }, wikiMoreLabel(d)));
+
+const countryCard = c => h('section', { class: 'card' },
+  h('h2', { class: 'h-sec' }, t('Ülke bilgisi · {c}', { c: c.name })),
+  h('dl', { class: 'kv' },
+    c.capital && [h('dt', {}, t('Başkent')), h('dd', {}, c.capital)],
+    c.currencies.length && [h('dt', {}, t('Para birimi')), h('dd', {}, c.currencies.join(', '))],
+    c.languages.length && [h('dt', {}, t('Dil')), h('dd', {}, c.languages.join(', '))],
+    c.driveSide && [h('dt', {}, t('Trafik')), h('dd', {}, c.driveSide === 'left' ? t('Soldan akar') : t('Sağdan akar'))],
+    c.idd && [h('dt', {}, t('Telefon kodu')), h('dd', {}, c.idd)]));
+
 function renderInfoTab(body, ctx) {
   const { trip } = ctx;
-  const d = trip.destInfo;
-  if (d) {
-    body.append(h('section', { class: 'card wiki-card' },
-      d.thumb && h('img', { src: d.thumb, alt: '', class: 'wiki-thumb', loading: 'lazy' }),
-      h('h2', {}, d.title),
-      h('p', {}, d.extract),
-      h('a', { href: d.url, target: '_blank', rel: 'noopener', class: 'small' }, wikiMoreLabel(d))));
-  }
+  if (trip.route) {
+    // Rotadaki her şehrin kısa tanıtımı
+    for (const c of trip.route.cities) if (c.info) body.append(wikiCard(c.info));
+  } else if (trip.destInfo) body.append(wikiCard(trip.destInfo));
 
   if (trip.weather?.days) {
     const archive = trip.weather.source === 'archive';
@@ -443,21 +533,12 @@ function renderInfoTab(body, ctx) {
     body.append(h('div', { class: 'note' }, t('Hava bilgisi şu an alınamadı; internet varken gezi sayfasını açınca güncellenir.')));
   }
 
-  if (trip.country) {
-    const c = trip.country;
-    body.append(h('section', { class: 'card' },
-      h('h2', { class: 'h-sec' }, t('Ülke bilgisi · {c}', { c: c.name })),
-      h('dl', { class: 'kv' },
-        c.capital && [h('dt', {}, t('Başkent')), h('dd', {}, c.capital)],
-        c.currencies.length && [h('dt', {}, t('Para birimi')), h('dd', {}, c.currencies.join(', '))],
-        c.languages.length && [h('dt', {}, t('Dil')), h('dd', {}, c.languages.join(', '))],
-        c.driveSide && [h('dt', {}, t('Trafik')), h('dd', {}, c.driveSide === 'left' ? t('Soldan akar') : t('Sağdan akar'))],
-        c.idd && [h('dt', {}, t('Telefon kodu')), h('dd', {}, c.idd)])));
-  }
+  if (trip.route) for (const c of Object.values(trip.countries || {})) body.append(countryCard(c));
+  else if (trip.country) body.append(countryCard(trip.country));
 
   body.append(h('section', {},
     h('h2', { class: 'h-sec' }, t('Dikkat edilecekler')),
-    buildTips(trip, ctx.settings).map(tip => h('div', { class: `tip ${tip.level}` },
+    tripTips(trip, ctx.settings).map(tip => h('div', { class: `tip ${tip.level}` },
       h('span', { class: 'tip-icon', 'aria-hidden': 'true' }, tip.icon),
       h('div', {}, h('b', {}, tip.title), h('p', {}, tip.text))))));
 

@@ -3,11 +3,30 @@
 // genel geçer laf yerine o geziye özel uyarı üretir.
 
 import { fmtDay, fmtDur, parseISODate } from './util.js';
-import { TYPES, MUZEKART_TYPES } from './places.js';
-import { t } from './i18n.js';
+import { TYPES, MUZEKART_TYPES, DRINK_TYPES } from './places.js';
+import { t, locale } from './i18n.js';
 
 const RAINY = c => (c >= 61 && c <= 67) || (c >= 80 && c <= 82) || c >= 95;
 const SCHENGEN = new Set(['at', 'be', 'bg', 'hr', 'cz', 'dk', 'ee', 'fi', 'fr', 'de', 'gr', 'hu', 'is', 'it', 'lv', 'li', 'lt', 'lu', 'mt', 'nl', 'no', 'pl', 'pt', 'ro', 'sk', 'si', 'es', 'se', 'ch']);
+
+// Birden fazla ülkeden geçen rotalarda her ülkenin uyarıları; aynı uyarı bir kez gösterilir,
+// aynı başlıklı ama ülkeye özel olanların başlığına ülke adı eklenir.
+export function tripTips(trip, settings = {}) {
+  const ccs = trip.route ? [...new Set(trip.days.map(d => d.cc).filter(Boolean))] : [];
+  if (ccs.length <= 1) return buildTips(trip, settings);
+  const names = new Intl.DisplayNames([locale()], { type: 'region' });
+  const seen = new Set(), titles = new Set(), out = [];
+  for (const cc of ccs) {
+    const view = { ...trip, dest: { ...trip.dest, cc }, country: trip.countries?.[cc] || null };
+    for (const tip of buildTips(view, settings)) {
+      if (seen.has(tip.title + tip.text)) continue;
+      seen.add(tip.title + tip.text);
+      out.push(titles.has(tip.title) ? { ...tip, title: `${tip.title} · ${names.of(cc.toUpperCase())}` } : tip);
+      titles.add(tip.title);
+    }
+  }
+  return out;
+}
 
 export function buildTips(trip, settings = {}) {
   const tips = [];
@@ -54,8 +73,22 @@ export function buildTips(trip, settings = {}) {
   if (shopping && cc === 'tr' && (types.has('bazaar') || types.has('bedesten') || types.has('market_hall'))) {
     add('🧿', t('Çarşıda pazarlık'), t('Kapalı çarşı ve bedestenlerde pazarlık olağandır; birkaç dükkânda fiyat sorduktan sonra karar ver.'));
   }
-  if (shopping && abroad && home === 'ch') {
-    add('🛃', t("İsviçre'ye dönüşte gümrük"), t("Yurt dışından getirdiğin mallar kişi başı günlük toplam 150 CHF'ye kadar KDV'siz. Aşarsan tutarın tamamı için İsviçre KDV'si ödenir; QuickZoll uygulamasıyla önceden beyan edebilirsin. Et (kişi başı 1 kg), alkol ve tütün için ayrıca miktar sınırları var."), 'warn');
+  const drinks = stops.some(p => DRINK_TYPES.has(p.type)) || trip.interests?.includes('sarap');
+  if (drinks) {
+    add('🍷', t('Tadım ziyaretleri'), t('Bağ evleri, şaraphaneler ve bira üreticilerinin çoğu ziyaretçiyi randevuyla kabul eder, pazar günü kapalı olabilir; birkaç gün önceden ara ya da sitesinden yer ayır. Hasat dönemi (eylül–ekim) en canlı ama en kalabalık zamandır.'));
+    if (car) add('🚗', t('Tadım ve araba'), t('Avrupa ülkelerinin çoğunda alkol sınırı 0,5 promil, yeni sürücülerde daha düşük ya da sıfır. Tadımda tükürme kabı kullanılabilir; en iyisi grupta içmeyen bir sürücü olması.'), 'warn');
+  }
+  if ((shopping || drinks) && abroad && home === 'ch') {
+    add('🛃', t("İsviçre'ye dönüşte gümrük"), t("Yurt dışından getirdiğin mallar kişi başı günlük toplam 150 CHF'ye kadar KDV'siz. Aşarsan tutarın tamamı için İsviçre KDV'si ödenir; QuickZoll uygulamasıyla önceden beyan edebilirsin. Et (kişi başı 1 kg), alkol ve tütün için ayrıca miktar sınırları var.")
+      + (drinks ? ' ' + t("Alkolde gümrüksüz miktar kişi başı: %18'e kadar (şarap, bira) 5 litre, daha sert içkilerde 1 litre.") : ''), 'warn');
+  }
+  // Rota: çok uzun yol günleri
+  const longDays = trip.route ? trip.days.filter(d => (d.drive || 0) > 480) : [];
+  if (longDays.length) {
+    add('🛣️', t('Çok uzun yol günleri'), t('{days} günlerinde 8 saatten fazla yol var. Arada bir şehirde gece kalmak (rotaya bir durak ekleyip 1 gece vermek) daha güvenli ve keyifli olur.', { days: longDays.map(d => fmtDay(d.date)).join(', ') }), 'warn');
+  }
+  if (trip.route && trip.days.some(d => d.sleep)) {
+    add('🛏️', t('Rotada konaklama'), t('Her gece farklı yerde kalacaksan konaklamaları önceden ayır ve geç varacağın günlerde otele haber ver. Arabayla geziyorsan otoparkı olan yerleri seç.'));
   }
   if (car && trip.drive && trip.drive.min > 180) add('⏱️', t('Uzun sürüş'), t('Evden tek yön yaklaşık {d} sürüş var. İlk ve son günü hafif tut, en geç 2 saatte bir mola ver.', { d: fmtDur(trip.drive.min) }), 'warn');
 

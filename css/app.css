@@ -72,6 +72,8 @@ p { margin: .4em 0; }
   border-bottom: 1px solid var(--line);
 }
 .topbar h1 { flex: 1; font-size: 1.15rem; font-weight: 700; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 680px; margin: 0 auto; }
+.home-btn { flex: none; display: grid; place-items: center; width: 38px; height: 38px; margin-left: -6px; border-radius: 12px; font-size: 1.2rem; text-decoration: none; }
+.home-btn:hover, .home-btn:focus-visible { background: var(--surface-2); }
 .net { font-size: .75rem; padding: 3px 8px; border-radius: 99px; background: var(--warn-bg); color: var(--warn-ink); }
 
 main { max-width: 680px; margin: 0 auto; padding: 16px 16px calc(var(--tabbar-h) + env(safe-area-inset-bottom) + 28px); }
@@ -326,6 +328,24 @@ dialog.sheet::backdrop { background: rgb(0 0 0 / .45); }
 .cost-parts { margin-top: 6px; line-height: 1.5; }
 .cost-more { margin-top: 8px; color: var(--primary); font-weight: 650; }
 .day-cost { font-weight: 650; color: var(--text); }
+
+/* Rota */
+.route-card { margin-bottom: 14px; }
+.rt-list { margin: 10px 0 4px; }
+.rt-city { display: flex; align-items: center; gap: 10px; padding: 4px 0; }
+.rt-main { flex: 1; min-width: 0; }
+.rt-dot { flex: none; display: grid; place-items: center; width: 26px; height: 26px; border-radius: 50%; background: var(--primary); color: #fff; font-size: .8rem; font-weight: 700; }
+.rt-dot.end { background: var(--surface-2); }
+.rt-leg { margin-left: 12px; padding: 2px 0 2px 22px; border-left: 2px dashed var(--line); }
+.route-map { height: 280px; margin-bottom: 8px; }
+.rt-edit { display: grid; gap: 8px; margin: 10px 0; }
+.rt-item { padding: 10px 12px; border-radius: 14px; background: var(--surface); box-shadow: var(--shadow); }
+.rt-item-head { display: flex; align-items: center; gap: 10px; }
+.rt-name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.rt-item-ctl { display: flex; align-items: center; gap: 10px; margin-top: 8px; flex-wrap: wrap; }
+.rt-arrows { margin-left: auto; display: flex; gap: 4px; }
+.tl-leg.road .txt { font-weight: 650; color: var(--text); }
+.day-note { margin: 0 16px 8px; }
 .budget-row { display: flex; justify-content: space-between; align-items: center; gap: 12px; padding: 12px 0; border-bottom: 1px solid var(--line); }
 .budget-row:last-child { border-bottom: 0; }
 .bl-label { font-weight: 650; }

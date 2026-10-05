@@ -13,7 +13,7 @@ export async function generateTrip(f, settings, progress = () => {}) {
   let found = f.places;
   if (!found) {
     progress(t('Gezilecek yerler aranıyor…'));
-    found = await fetchPlaces({ lat: f.dest.lat, lon: f.dest.lon, radiusKm: f.radiusKm, cats: f.interests });
+    found = await fetchPlaces({ lat: f.dest.lat, lon: f.dest.lon, radiusKm: f.radiusKm, cats: f.interests, hidden: f.hidden });
   }
   const sights = found.filter(isSight);
   if (!sights.length) throw new Error(t('Bu bölgede seçtiğin ilgi alanlarına uygun yer bulunamadı. Alanı genişletmeyi ya da başka ilgi alanları seçmeyi dene.'));
@@ -37,7 +37,7 @@ export async function generateTrip(f, settings, progress = () => {}) {
     id: uid(), kind: f.kind || 'plan', name: f.name, createdAt: Date.now(), updatedAt: Date.now(),
     dest: f.dest, origin: f.origin || null, startDate: dates[0], endDate: dates[dates.length - 1],
     travelers: f.travelers, transport: f.transport, pace: f.pace, level: f.level, stay: f.stay || 'ekonomik',
-    radiusKm: f.radiusKm, interests: f.interests,
+    radiusKm: f.radiusKm, interests: f.interests, hidden: !!f.hidden,
     places, days: plan.days.map(d => ({ ...d, lunch: [], dinner: [] })), alternatives: plan.alternatives,
     weather: null, drive: null, country: null, destInfo: null, budgetOverrides: {},
     partial: !!found.partial,
@@ -97,6 +97,27 @@ export async function addParking(trip) {
 }
 
 export async function refreshWeather(trip) {
-  const w = await weatherDaily(trip.dest.lat, trip.dest.lon, trip.startDate, trip.endDate);
-  trip.weather = w ? { ...w, fetchedAt: Date.now() } : null;
+  if (!trip.route) {
+    const w = await weatherDaily(trip.dest.lat, trip.dest.lon, trip.startDate, trip.endDate);
+    trip.weather = w ? { ...w, fetchedAt: Date.now() } : null;
+    return;
+  }
+  // Rota: her günün havası o gün bulunulan (geceyi geçirilen ya da varılan) yerin havası
+  const groups = new Map();
+  for (const d of trip.days) {
+    const p = d.sleep || d.to || d.from;
+    if (!p) continue;
+    const k = `${p.lat.toFixed(2)},${p.lon.toFixed(2)}`;
+    if (!groups.has(k)) groups.set(k, { p, dates: [] });
+    groups.get(k).dates.push(d.date);
+  }
+  const days = {};
+  let source = null;
+  await Promise.all([...groups.values()].map(async g => {
+    const w = await weatherDaily(g.p.lat, g.p.lon, g.dates[0], g.dates[g.dates.length - 1]).catch(() => null);
+    if (!w) return;
+    source ||= w.source;
+    for (const iso of g.dates) if (w.days[iso]) days[iso] = w.days[iso];
+  }));
+  trip.weather = source ? { source, days, fetchedAt: Date.now() } : null;
 }

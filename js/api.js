@@ -320,6 +320,27 @@ export async function driveRoute(a, b) {
   return rt ? { km: rt.distance / 1000, min: rt.duration / 60 } : null;
 }
 
+const osrmCoords = pts => pts.map(p => `${p.lon.toFixed(5)},${p.lat.toFixed(5)}`).join(';');
+
+// Noktalar arası tüm yol süreleri (dk) ve mesafeleri (km): rota sıralaması için
+export async function drivingMatrix(pts) {
+  const r = await fetchJSON(`https://router.project-osrm.org/table/v1/driving/${osrmCoords(pts)}?annotations=duration,distance`, {}, 20000);
+  if (r.code !== 'Ok') throw new Error('osrm');
+  return { min: r.durations.map(row => row.map(s => (s == null ? null : s / 60))), km: r.distances.map(row => row.map(m => (m == null ? null : m / 1000))) };
+}
+
+// Sıralı noktalardan geçen gerçek yol: her bacağın süresi/mesafesi ve haritada çizmek için sadeleştirilmiş çizgi
+export async function drivingRoute(pts) {
+  const r = await fetchJSON(`https://router.project-osrm.org/route/v1/driving/${osrmCoords(pts)}?overview=simplified&geometries=geojson`, {}, 25000);
+  const rt = r.routes?.[0];
+  if (!rt) throw new Error('osrm');
+  return {
+    legs: rt.legs.map(l => ({ km: l.distance / 1000, min: l.duration / 60 })),
+    // [lat, lon] dizisi, 4 basamak (~10 m) yeterli; cihazda yer kaplamasın
+    geo: rt.geometry.coordinates.map(([x, y]) => [Math.round(y * 1e4) / 1e4, Math.round(x * 1e4) / 1e4]),
+  };
+}
+
 // ---------- Ülke bilgisi (yurt dışı gezileri için; Wikidata, anahtarsız) ----------
 // Eskiden REST Countries kullanılıyordu; servis 2026'da eski sürümlerini kapattı ve yenisi API anahtarı istiyor.
 // Ülke ve para birimi adları tarayıcının kendi çevirisinden (Intl), başkent ve diller Wikidata'dan gelir.
