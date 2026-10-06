@@ -57,9 +57,10 @@ export async function aiCall(task, payload, timeoutMs = 20000) {
 const weekday = iso => new Intl.DateTimeFormat('en-GB', { weekday: 'long' }).format(parseISODate(iso));
 
 // Serbest metin → planlama formu için yapılandırılmış istek
-export function aiParseTrip(text) {
+// history: aynı sohbette daha önce gönderilen mesajlar (YZ yenisini bunlarla birleştirir)
+export function aiParseTrip(text, history = []) {
   const s = getSettings();
-  return aiCall('parse', { text, lang: getLang(), today: todayISO(), weekday: weekday(todayISO()), homeCountry: s.homeCountry, hasHome: !!s.home });
+  return aiCall('parse', { text, history, lang: getLang(), today: todayISO(), weekday: weekday(todayISO()), homeCountry: s.homeCountry, hasHome: !!s.home });
 }
 
 // Bir günün kısa rehber metni. Gezinin yalnızca gerekli kısmı gönderilir (ev konumu gönderilmez).

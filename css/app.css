@@ -332,6 +332,8 @@ dialog.sheet::backdrop { background: rgb(0 0 0 / .45); }
 /* Yapay zekâ */
 .ai-ask { margin-bottom: 14px; }
 .ai-text { width: 100%; box-sizing: border-box; min-height: 84px; padding: 10px 12px; border: 1px solid var(--line); border-radius: 12px; background: var(--bg); color: var(--text); font: inherit; resize: vertical; margin-bottom: 8px; }
+.ai-thread { display: grid; gap: 6px; margin-bottom: 8px; }
+.ai-msg { justify-self: end; max-width: 85%; margin: 0; padding: 8px 12px; border-radius: 14px 14px 4px 14px; background: var(--surface-2); line-height: 1.4; white-space: pre-wrap; }
 .ai-note { margin-bottom: 14px; }
 .ai-note p { margin: 6px 0 0; }
 .ai-card { margin-bottom: 14px; }

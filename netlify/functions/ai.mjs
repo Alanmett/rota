@@ -121,6 +121,8 @@ const TRIP_TOOL = {
 async function parseTrip(p) {
   const text = String(p.text || '').slice(0, 1200).trim();
   if (!text) throw Object.assign(new Error('empty'), { code: 'bad_request' });
+  // Sohbet: önceki mesajlar (en fazla 6) bağlam olarak gönderilir; yeni mesaj onlara ekler ya da düzeltir
+  const history = (Array.isArray(p.history) ? p.history : []).slice(-6).map(m => String(m).slice(0, 600).trim()).filter(Boolean);
   const lang = LANG_NAMES[p.lang] || 'Turkish';
   const system = [
     'You turn a traveller\'s free-text wish into a structured request for the Rota trip planner app.',
@@ -131,8 +133,12 @@ async function parseTrip(p) {
     'For rota: if nights per place are not given, use 1 for small towns, 2 for big cities or rich regions, and 0 for places described as a quick stop on the way.',
     'If the user mentions starting from home and has a home location, set startHome true.',
     'Never invent places the user did not ask for. Do not plan the trip yourself; the app does that with real data.',
+    'The user may send follow-up messages that add to or correct earlier ones. Always return the complete, merged request (earlier details stay unless the new message changes them).',
   ].join('\n');
-  return callClaude({ system, user: text, tool: TRIP_TOOL, maxTokens: 800 });
+  const user = history.length
+    ? `Earlier messages:\n${history.map((m, i) => `${i + 1}. ${m}`).join('\n')}\n\nNew message (adds to or corrects the earlier ones):\n${text}`
+    : text;
+  return callClaude({ system, user, tool: TRIP_TOOL, maxTokens: 800 });
 }
 
 // ---------- 2. Günlük rehber ----------

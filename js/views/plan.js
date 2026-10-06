@@ -70,28 +70,40 @@ export function renderPlan(root) {
 
 // ---- YZ: anlat, formu doldursun ----
 // YZ isteği yapılandırır; yerler haritada aranır (gerçek koordinatlar), form doldurulur ve kullanıcı kontrol edip planı oluşturur.
+// Sohbet gibi: Enter gönderir ve kutu temizlenir; gönderilenler üstte görünür, sonraki mesajlar öncekilere eklenir.
 function aiAskCard(rerender) {
+  form.aiHistory ||= [];
+  const history = form.aiHistory;
   const box = h('textarea', {
-    class: 'ai-text', rows: '3', maxlength: '1200', value: form.aiText || '', 'aria-label': t('Gezini anlat'),
-    placeholder: t('Örn: "Ekim sonunda eşimle 3 gün Kapadokya, ekonomik otel, şaraphaneler ve az bilinen yerler" ya da "Evden çıkıp 6 günde Bursa, Konya ve Kapadokya, sonra eve dönüş"'),
+    class: 'ai-text', rows: '3', maxlength: '1200', value: form.aiText || '', enterkeyhint: 'send', 'aria-label': t('Gezini anlat'),
+    placeholder: history.length
+      ? t('Eklemek ya da değiştirmek istediğin bir şey var mı? (ör. "bir de çocuğumuz var", "3 değil 4 gün olsun")')
+      : t('Örn: "Ekim sonunda eşimle 3 gün Kapadokya, ekonomik otel, şaraphaneler ve az bilinen yerler" ya da "Evden çıkıp 6 günde Bursa, Konya ve Kapadokya, sonra eve dönüş"'),
     oninput: e => { form.aiText = e.target.value; },
+    // Enter: gönder · Shift+Enter: yeni satır (yazı birleştirilirken basılan Enter sayılmaz)
+    onkeydown: e => { if (e.key === 'Enter' && !e.shiftKey && !e.isComposing) { e.preventDefault(); go(); } },
   });
   const out = h('div', { 'aria-live': 'polite' });
-  const btn = h('button', { class: 'btn primary', type: 'button', onclick: go }, '✨ ' + t('YZ formu doldursun'));
+  const btn = h('button', { class: 'btn primary', type: 'button', onclick: go }, '✨ ' + (history.length ? t('Gönder') : t('YZ formu doldursun')));
+  const reset = () => { form.aiHistory = []; form.aiText = ''; form.aiNote = null; rerender(); };
   return h('section', { class: 'card ai-ask' },
     h('h2', { class: 'h-sec' }, '✨ ' + t('Anlat, ben planlayayım')),
+    history.length > 0 && h('div', { class: 'ai-thread' }, history.map(m => h('p', { class: 'ai-msg' }, m))),
     box,
-    aiReady() ? h('div', { class: 'btn-row' }, btn)
+    aiReady() ? h('div', { class: 'btn-row' }, btn,
+      history.length > 0 && h('button', { class: 'btn small', type: 'button', onclick: reset }, '🗑️ ' + t('Yeni istek')))
       : h('p', { class: 'muted small' }, t('Bu özellik için Ayarlar > Yapay zekâ bölümünde erişim kodunu gir.'), ' ', h('a', { href: '#/ayarlar' }, t('Ayarlar') + ' →')),
+    aiReady() && h('p', { class: 'muted small' }, t('Enter ile gönder · Shift+Enter yeni satır')),
     out);
 
   async function go() {
+    if (btn.disabled || !aiReady()) return;
     const text = box.value.trim();
-    if (text.length < 5) { toast(t('Önce gezini birkaç kelimeyle anlat.')); return; }
+    if (text.length < 3) { toast(t('Önce gezini birkaç kelimeyle anlat.')); return; }
     btn.disabled = true;
     out.replaceChildren(spinner(t('YZ isteğini anlıyor…')));
     try {
-      const r = await aiParseTrip(text);
+      const r = await aiParseTrip(text, history);
       out.replaceChildren(spinner(t('Yerler haritada bulunuyor…')));
       const found = [], missing = [];
       for (const p of (r.places || []).slice(0, MAX_ROUTE_STOPS)) {
@@ -103,7 +115,12 @@ function aiAskCard(rerender) {
       if (!found.length) throw new Error(t('Bahsettiğin yerleri haritada bulamadım; yer adlarını açıkça yazıp tekrar dene.'));
       applyAi(r, found);
       form.aiNote = { summary: r.summary || '', unclear: r.unclear || '', missing };
+      // Başarılı: mesaj sohbete eklenir, kutu temizlenir (hata olursa yazılan kutuda kalır)
+      history.push(text);
+      form.aiText = '';
       rerender();
+      // Bilgisayarda kutu yazmaya hazır kalsın; telefonda klavye açılıp YZ'nin özetini örtmesin
+      if (matchMedia('(pointer: fine)').matches) setTimeout(() => document.querySelector('.ai-text')?.focus({ preventScroll: true }), 0);
     } catch (e) {
       out.replaceChildren(h('p', { class: 'error' }, e.message));
       btn.disabled = false;

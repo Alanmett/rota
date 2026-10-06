@@ -712,4 +712,8 @@ export default {
   "YZ sunucusuna ulaşılamadı. Netlify sitesinin adresini ve internet bağlantını kontrol et.": "Couldn't reach the AI server. Check the Netlify site address and your internet connection.",
   "YZ yazıyor…": "AI is writing…",
   "YZ zamanında yanıt vermedi; tekrar dene.": "The AI didn't answer in time; try again.",
+  "Eklemek ya da değiştirmek istediğin bir şey var mı? (ör. \"bir de çocuğumuz var\", \"3 değil 4 gün olsun\")": "Anything to add or change? (e.g. \"we're also bringing our child\", \"make it 4 days, not 3\")",
+  "Gönder": "Send",
+  "Yeni istek": "New request",
+  "Enter ile gönder · Shift+Enter yeni satır": "Enter to send · Shift+Enter for a new line",
 };
