@@ -41,6 +41,8 @@ export const DEFAULT_SETTINGS = {
   halfFare: false,     // CH: Halbtax (toplu taşıma yarı fiyat)
   pricesReviewed: false,
   budget: structuredClone(COUNTRY_PRESETS.ch.budget),
+  aiCode: '',          // YZ sunucusunun erişim kodu (yalnızca bu cihazda; yedeğe yazılmaz)
+  aiEndpoint: '',      // boşsa varsayılan Netlify adresi (ai.js)
 };
 
 function read(k, fb) { try { const v = localStorage.getItem(k); return v ? JSON.parse(v) : fb; } catch { return fb; } }
@@ -90,12 +92,13 @@ export const getPref = (name, fb) => read(`rota.pref.${name}`, fb);
 export const savePref = (name, v) => write(`rota.pref.${name}`, v);
 
 export function exportData() {
-  return JSON.stringify({ app: 'rota', version: 1, exportedAt: new Date().toISOString(), settings: read(K.settings, {}), trips: allTrips() }, null, 2);
+  const { aiCode, ...settings } = read(K.settings, {}); // erişim kodu yedek dosyasına yazılmaz
+  return JSON.stringify({ app: 'rota', version: 1, exportedAt: new Date().toISOString(), settings, trips: allTrips() }, null, 2);
 }
 export function importData(text) {
   const d = JSON.parse(text);
   if (d.app !== 'rota') throw new Error(t('Bu dosya bir Rota yedeği değil.'));
   write(K.trips, { ...allTrips(), ...(d.trips || {}) });
-  if (d.settings) write(K.settings, d.settings);
+  if (d.settings) write(K.settings, { ...d.settings, aiCode: read(K.settings, {}).aiCode || '' });
   return Object.keys(d.trips || {}).length;
 }

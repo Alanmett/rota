@@ -150,9 +150,10 @@ function normPlace(r) {
   };
 }
 
-export async function geocode(q) {
+export async function geocode(q, cc = '') {
   await nomThrottle();
-  const u = `${NOM}/search?format=jsonv2&addressdetails=1&extratags=1&limit=6&accept-language=${getLang()}&q=${encodeURIComponent(q)}`;
+  const u = `${NOM}/search?format=jsonv2&addressdetails=1&extratags=1&limit=6&accept-language=${getLang()}&q=${encodeURIComponent(q)}`
+    + (/^[a-z]{2}$/.test(cc) ? `&countrycodes=${cc}` : '');
   return (await fetchJSON(u)).map(normPlace);
 }
 

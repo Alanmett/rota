@@ -11,7 +11,8 @@ import { generateTrip } from '../tripgen.js';
 import { generateRoute, MAX_ROUTE_DAYS, MAX_ROUTE_STOPS } from '../route.js';
 import { placeSearch } from '../components.js';
 import { createMap, numIcon, meIcon } from '../map.js';
-import { reverseGeocode, defaultRadiusFor } from '../api.js';
+import { reverseGeocode, geocode, defaultRadiusFor } from '../api.js';
+import { aiReady, aiParseTrip } from '../ai.js';
 import { todayISO, dateRange, parseISODate, toISODate, fmtDMY } from '../util.js';
 import { t } from '../i18n.js';
 
@@ -56,13 +57,103 @@ export function renderPlan(root) {
   if (form.startDate < todayISO()) form.startDate = todayISO();
   if (form.endDate < form.startDate) form.endDate = form.startDate;
   let cleanup = null;
-  const rerender = () => { cleanup?.(); root.replaceChildren(); renderPlan(root); };
+  const rerender = () => { cleanup?.(); root.replaceChildren(); renderPlan(root); window.scrollTo(0, 0); };
+  root.append(aiAskCard(rerender));
+  if (form.aiNote) root.append(aiNoteCard());
   root.append(h('section', { class: 'form-sec' },
     segmented([{ value: 'tek', label: t('Tek yer') }, { value: 'rota', label: t('Birkaç yer (rota)') }], form.mode, v => { form.mode = v; rerender(); }),
     h('p', { class: 'muted small' }, form.mode === 'rota'
       ? t('Görmek istediğin şehirleri haritada işaretle; sırayı, yolu ve her şehirde ne göreceğini ben planlayayım.')
       : t('Tek bir şehir ya da bölgede, belirli günlerde gezi.'))));
   cleanup = form.mode === 'rota' ? renderRouteForm(root) : renderSingleForm(root);
+}
+
+// ---- YZ: anlat, formu doldursun ----
+// YZ isteği yapılandırır; yerler haritada aranır (gerçek koordinatlar), form doldurulur ve kullanıcı kontrol edip planı oluşturur.
+function aiAskCard(rerender) {
+  const box = h('textarea', {
+    class: 'ai-text', rows: '3', maxlength: '1200', value: form.aiText || '', 'aria-label': t('Gezini anlat'),
+    placeholder: t('Örn: "Ekim sonunda eşimle 3 gün Kapadokya, ekonomik otel, şaraphaneler ve az bilinen yerler" ya da "Evden çıkıp 6 günde Bursa, Konya ve Kapadokya, sonra eve dönüş"'),
+    oninput: e => { form.aiText = e.target.value; },
+  });
+  const out = h('div', { 'aria-live': 'polite' });
+  const btn = h('button', { class: 'btn primary', type: 'button', onclick: go }, '✨ ' + t('YZ formu doldursun'));
+  return h('section', { class: 'card ai-ask' },
+    h('h2', { class: 'h-sec' }, '✨ ' + t('Anlat, ben planlayayım')),
+    box,
+    aiReady() ? h('div', { class: 'btn-row' }, btn)
+      : h('p', { class: 'muted small' }, t('Bu özellik için Ayarlar > Yapay zekâ bölümünde erişim kodunu gir.'), ' ', h('a', { href: '#/ayarlar' }, t('Ayarlar') + ' →')),
+    out);
+
+  async function go() {
+    const text = box.value.trim();
+    if (text.length < 5) { toast(t('Önce gezini birkaç kelimeyle anlat.')); return; }
+    btn.disabled = true;
+    out.replaceChildren(spinner(t('YZ isteğini anlıyor…')));
+    try {
+      const r = await aiParseTrip(text);
+      out.replaceChildren(spinner(t('Yerler haritada bulunuyor…')));
+      const found = [], missing = [];
+      for (const p of (r.places || []).slice(0, MAX_ROUTE_STOPS)) {
+        try {
+          const g = (await geocode(p.name, (p.country || '').toLowerCase()))[0];
+          if (g) found.push({ ...g, nights: Number.isInteger(p.nights) ? p.nights : null }); else missing.push(p.name);
+        } catch { missing.push(p.name); }
+      }
+      if (!found.length) throw new Error(t('Bahsettiğin yerleri haritada bulamadım; yer adlarını açıkça yazıp tekrar dene.'));
+      applyAi(r, found);
+      form.aiNote = { summary: r.summary || '', unclear: r.unclear || '', missing };
+      rerender();
+    } catch (e) {
+      out.replaceChildren(h('p', { class: 'error' }, e.message));
+      btn.disabled = false;
+    }
+  }
+}
+
+function applyAi(r, places) {
+  const s = getSettings();
+  const pick = (v, ok) => (ok.includes(v) ? v : undefined);
+  const set = (k, v) => { if (v !== undefined && v !== null) form[k] = v; };
+  set('adults', Number.isInteger(r.adults) ? Math.max(1, Math.min(20, r.adults)) : undefined);
+  set('children', Number.isInteger(r.children) ? Math.max(0, Math.min(10, r.children)) : undefined);
+  set('elderly', typeof r.elderly === 'boolean' ? r.elderly : undefined);
+  set('pet', typeof r.pet === 'boolean' ? r.pet : undefined);
+  set('transport', pick(r.transport, Object.keys(TRANSPORTS)));
+  set('pace', pick(r.pace, Object.keys(PACES)));
+  set('level', pick(r.food, Object.keys(FOODS)));
+  set('stay', pick(r.stay, Object.keys(STAYS)));
+  set('hidden', typeof r.hidden === 'boolean' ? r.hidden : undefined);
+  const interests = (r.interests || []).filter(c => SIGHT_CATS.includes(c));
+  if (interests.length) form.interests = interests;
+  if (/^\d{4}-\d{2}-\d{2}$/.test(r.startDate || '') && r.startDate >= todayISO()) form.startDate = r.startDate;
+
+  const rota = (r.mode === 'rota' && (places.length > 1 || r.startHome)) || places.length > 1;
+  if (rota) {
+    form.mode = 'rota';
+    form.route.cities = places.map(p => ({ ...routeCity(p), ...(p.nights != null ? { nights: p.nights } : {}) }));
+    if (r.startHome && s.home) form.route.start = 'home';
+    if (typeof r.back === 'boolean') form.route.back = r.back;
+    form.route.optimize = true;
+    if (form.transport === 'yuruyus') form.transport = 'araba';
+  } else {
+    form.mode = 'tek';
+    form.dest = places[0];
+    form.radiusKm = defaultRadiusFor(places[0].kind);
+    const days = Number.isInteger(r.days) ? Math.max(1, Math.min(14, r.days)) : 1;
+    const end = parseISODate(form.startDate); end.setDate(end.getDate() + days - 1);
+    form.endDate = toISODate(end);
+  }
+}
+
+function aiNoteCard() {
+  const n = form.aiNote;
+  return h('section', { class: 'note ai-note' },
+    h('b', {}, '✨ ' + t('YZ şöyle anladı:')), ' ', n.summary,
+    n.unclear && h('p', { class: 'small' }, '❔ ' + n.unclear),
+    n.missing?.length > 0 && h('p', { class: 'small' }, '⚠️ ' + t('Haritada bulunamayan yerler: {x}', { x: n.missing.join(', ') })),
+    h('p', { class: 'small' }, t('Aşağıdaki formu kontrol et, istersen değiştir; sonra en alttaki düğmeyle planı oluştur.')),
+    h('button', { class: 'link-btn', type: 'button', onclick: e => { form.aiNote = null; e.target.closest('.ai-note').remove(); } }, t('Kapat')));
 }
 
 // ---- Ortak bölümler ----

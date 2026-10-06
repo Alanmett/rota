@@ -329,6 +329,17 @@ dialog.sheet::backdrop { background: rgb(0 0 0 / .45); }
 .cost-more { margin-top: 8px; color: var(--primary); font-weight: 650; }
 .day-cost { font-weight: 650; color: var(--text); }
 
+/* Yapay zekâ */
+.ai-ask { margin-bottom: 14px; }
+.ai-text { width: 100%; box-sizing: border-box; min-height: 84px; padding: 10px 12px; border: 1px solid var(--line); border-radius: 12px; background: var(--bg); color: var(--text); font: inherit; resize: vertical; margin-bottom: 8px; }
+.ai-note { margin-bottom: 14px; }
+.ai-note p { margin: 6px 0 0; }
+.ai-card { margin-bottom: 14px; }
+.ai-card p { margin: 6px 0; }
+.day-guide { margin: 0 16px 10px; padding: 10px 12px; border-radius: 12px; background: var(--surface-2); }
+.day-guide summary { cursor: pointer; font-weight: 650; }
+.day-guide p { margin: 8px 0 0; line-height: 1.5; }
+
 /* Rota */
 .route-card { margin-bottom: 14px; }
 .rt-list { margin: 10px 0 4px; }

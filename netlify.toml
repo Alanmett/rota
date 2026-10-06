@@ -1,0 +1,8 @@
+# Netlify: uygulamanın bir kopyasını yayınlar ve YZ ara sunucusunu (netlify/functions/ai.mjs) çalıştırır.
+# Derleme adımı yok; dosyalar olduğu gibi yayınlanır.
+[build]
+  publish = "."
+  command = ""
+
+[functions]
+  directory = "netlify/functions"

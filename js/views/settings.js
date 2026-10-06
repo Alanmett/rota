@@ -6,6 +6,7 @@ import { TRANSPORTS } from '../planner.js';
 import { placeSearch } from '../components.js';
 import { todayISO, setCurrency, currencySymbol } from '../util.js';
 import { t, getLang, LANGS } from '../i18n.js';
+import { aiCall, DEFAULT_AI_ENDPOINT } from '../ai.js';
 
 export function renderSettings(root) {
   const s = getSettings();
@@ -99,6 +100,7 @@ export function renderSettings(root) {
         num(t('Orta'), () => b.food.orta, v => { b.food.orta = v; }, cur),
         num(t('Konforlu'), () => b.food.konforlu, v => { b.food.konforlu = v; }, cur)),
       !s.pricesReviewed && h('button', { class: 'btn small', onclick: () => { s.pricesReviewed = true; persist(t('Fiyatlar onaylandı')); root.querySelector('.note.warn')?.remove(); } }, t('Fiyatlar güncel, uyarıyı kaldır'))),
+    aiSection(s, persist),
     section(t('Yedekleme'),
       h('p', { class: 'muted small' }, t('Gezilerin yalnızca bu cihazda saklanıyor. Telefon değiştirirken ya da tarayıcı verilerini silmeden önce yedek al.')),
       h('div', { class: 'btn-row' },
@@ -114,6 +116,30 @@ export function renderSettings(root) {
         fileInput)),
     section(t('Hakkında'),
       h('p', { class: 'small' }, t("Rota, ücretsiz ve açık veri kaynaklarıyla çalışır: mekânlar OpenStreetMap ve Wikidata'dan, açıklamalar Wikipedia'dan, hava durumu Open-Meteo'dan, yol mesafesi OSRM'den, tren süreleri İsviçre'nin açık tarife verisinden gelir.")),
-      h('p', { class: 'muted small' }, t('Hesap yok, takip yok. Konumun yalnızca arama yaparken bu servislere gönderilir; gezilerin ve ayarların cihazında kalır.'))),
+      h('p', { class: 'muted small' }, t('Hesap yok, takip yok. Konumun yalnızca arama yaparken bu servislere gönderilir; gezilerin ve ayarların cihazında kalır.')),
+      h('p', { class: 'muted small' }, t("İsteğe bağlı YZ özellikleri Anthropic'in Claude modelini kullanır."))),
   );
+}
+
+// Yapay zekâ: erişim kodu (Netlify'da belirlenen parola), isteğe bağlı sunucu adresi ve bağlantı testi
+function aiSection(s, persist) {
+  const status = h('p', { class: 'muted small', 'aria-live': 'polite' });
+  const code = h('input', { type: 'password', autocomplete: 'off', value: s.aiCode || '', placeholder: t('Erişim kodu'), 'aria-label': t('Erişim kodu'),
+    onchange: e => { s.aiCode = e.target.value.trim(); persist(); } });
+  const addr = h('input', { type: 'url', value: s.aiEndpoint || '', placeholder: DEFAULT_AI_ENDPOINT.replace('/.netlify/functions/ai', ''), 'aria-label': t('Sunucu adresi'),
+    onchange: e => { s.aiEndpoint = e.target.value.trim(); persist(); } });
+  const test = async () => {
+    s.aiCode = code.value.trim(); s.aiEndpoint = addr.value.trim(); saveSettings(s);
+    status.textContent = t('Bağlantı deneniyor…');
+    try { await aiCall('ping', {}); status.textContent = '✅ ' + t('YZ bağlantısı çalışıyor.'); }
+    catch (e) { status.textContent = '⚠️ ' + e.message; }
+  };
+  return section('✨ ' + t('Yapay zekâ'),
+    h('p', { class: 'muted small' }, t('Gezini anlatarak plan kurmak ve her gün için yerel rehber metni yazdırmak için. Claude kullanır; istek başına birkaç kuruş tutar ve Claude API hesabından ödenir.')),
+    h('label', { class: 'field' }, h('span', {}, t('Erişim kodu')), code),
+    h('details', { class: 'small' }, h('summary', {}, t('Gelişmiş: sunucu adresi')),
+      h('label', { class: 'field' }, h('span', {}, t('Netlify site adresi (boş bırakılırsa varsayılan)')), addr)),
+    h('div', { class: 'btn-row' }, h('button', { class: 'btn small', type: 'button', onclick: test }, t('Bağlantıyı dene'))),
+    status,
+    h('p', { class: 'muted small' }, t('YZ isteklerinde yalnızca gezinin yer adları, tarihleri ve kişi sayısı gönderilir; ev konumun gönderilmez. Erişim kodu yalnızca bu cihazda saklanır ve yedek dosyasına yazılmaz.')));
 }

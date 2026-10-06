@@ -11,6 +11,7 @@ import { showPlaceDetail, wikiMoreLabel, parkLink } from '../details.js';
 import { wxPill } from '../components.js';
 import { createMap, numIcon, emojiIcon, meIcon, popupFor, DAY_COLORS } from '../map.js';
 import { WX, exchangeRate, countryInfo } from '../api.js';
+import { aiReady, aiDayGuide, guideSig } from '../ai.js';
 import { fmtDur, fmtKm, fmtClock, fmtMoney, fmtNum, fmtDay, fmtDayLong, fmtRange, todayISO, currencySymbol } from '../util.js';
 import { t, getLang, locale } from '../i18n.js';
 
@@ -149,7 +150,7 @@ function renderPlanTab(body, ctx) {
   }
   ctx.budget = computeBudget(trip, ctx.settings);
   if (trip.route) body.append(routeCard(trip));
-  body.append(costCard(ctx));
+  body.append(costCard(ctx), guideCard(ctx));
   trip.days.forEach((_, di) => body.append(dayCard(ctx, di)));
   const alts = altSection(ctx);
   if (alts) body.append(alts);
@@ -171,6 +172,86 @@ function costCard(ctx) {
     parts.length > 0 && h('div', { class: 'cost-parts small' }, parts.join(' · ')),
     open.length > 0 && h('div', { class: 'muted small' }, t('Henüz dahil değil: {x}', { x: open.join(', ') })),
     h('div', { class: 'cost-more small' }, t('Bütçeyi gör ve düzenle') + ' →'));
+}
+
+// ---- YZ gün rehberi ----
+// YZ'ye gönderilen bilgi: günün yerleri, nerede olunduğu, yol, hava ve kişi sayısı (ev konumu gönderilmez)
+function guideInput(trip, di) {
+  const day = trip.days[di], tr = trip.travelers;
+  const w = trip.weather?.days?.[day.date];
+  const tl = computeTimeline(trip, di);
+  const road = tl.items.filter(x => x.kind === 'leg' && x.road).reduce((s, x) => s + x.min, 0);
+  return {
+    travelers: `${tr.adults} adults${tr.children ? `, ${tr.children} children` : ''}${tr.elderly ? ', someone with limited mobility' : ''}${tr.pet ? ', a pet' : ''}`,
+    transport: { araba: 'car', toplu: 'public transport', yuruyus: 'on foot' }[trip.transport] || trip.transport,
+    drive: road ? `${day.from?.name || ''} → ${day.sleep?.name || day.to?.name || ''}, about ${Math.round(road / 60 * 10) / 10} h on the road` : '',
+    weather: w ? `${Math.round(w.tmin)}–${Math.round(w.tmax)} °C, ${WX(w.code)[1]}${w.pop != null ? `, rain chance ${w.pop}%` : ''}${trip.weather.source === 'archive' ? ' (last year, indicative)' : ''}` : '',
+    typeOf: p => typeLabel(p),
+  };
+}
+
+async function writeGuides(ctx, days, onProgress) {
+  const { trip } = ctx;
+  trip.ai ||= { days: [] };
+  let done = 0, err = null;
+  for (let i = 0; i < days.length; i += 3) { // aynı anda en fazla 3 istek
+    await Promise.all(days.slice(i, i + 3).map(async di => {
+      try {
+        const g = await aiDayGuide(trip, di, guideInput(trip, di));
+        trip.ai.days[di] = { title: String(g.title || ''), text: String(g.text || ''), dishes: (g.dishes || []).slice(0, 3), tip: String(g.tip || ''), sig: guideSig(trip.days[di]) };
+      } catch (e) { err = e; }
+      onProgress?.(++done, days.length);
+    }));
+  }
+  trip.ai.lang = getLang(); trip.ai.at = Date.now();
+  ctx.save();
+  return err;
+}
+
+function guideCard(ctx) {
+  const { trip } = ctx;
+  const has = trip.ai?.days?.some(Boolean);
+  if (!aiReady()) {
+    return h('section', { class: 'card ai-card' },
+      h('b', {}, '✨ ' + t('YZ gün rehberi')),
+      h('p', { class: 'muted small' }, t('Her gün için yerel bir rehber metni, denenecek yöresel lezzetler ve bir ipucu. Kullanmak için Ayarlar > Yapay zekâ bölümünü doldur.')),
+      h('a', { class: 'btn small', href: '#/ayarlar' }, t('Ayarlar') + ' →'));
+  }
+  const status = h('p', { class: 'muted small', 'aria-live': 'polite' });
+  const btn = h('button', { class: 'btn small' + (has ? '' : ' primary'), type: 'button', onclick: run }, has ? '↻ ' + t('Rehberi yeniden yaz') : '✨ ' + t('YZ gün rehberi yaz'));
+  async function run() {
+    btn.disabled = true;
+    status.textContent = t('YZ yazıyor…');
+    const err = await writeGuides(ctx, trip.days.map((_, i) => i), (n, m) => { status.textContent = t('{n}/{m} gün yazıldı…', { n, m }); });
+    if (err && !trip.ai.days.some(Boolean)) { status.textContent = '⚠️ ' + err.message; btn.disabled = false; return; }
+    if (err) toast(t('Bazı günler yazılamadı: {e}', { e: err.message }), 5000);
+    if (ctx.body.isConnected) ctx.rerender();
+  }
+  return h('section', { class: 'card ai-card' },
+    h('b', {}, '✨ ' + t('YZ gün rehberi')),
+    h('p', { class: 'muted small' }, has
+      ? t('Rehber metinleri her günün başında (📖). YZ tarafından yazıldı; yanlış bilgi içerebilir.')
+      : t('Her gün için yerel bir rehber metni, denenecek yöresel lezzetler ve bir ipucu yazdır. Yer, saat ve fiyat bilgileri yine gerçek veriden gelir.')),
+    h('div', { class: 'btn-row' }, btn),
+    status);
+}
+
+function dayGuideBlock(ctx, di) {
+  const g = ctx.trip.ai?.days?.[di];
+  if (!g) return null;
+  const stale = g.sig !== guideSig(ctx.trip.days[di]);
+  const refresh = async e => {
+    e.target.disabled = true; e.target.textContent = t('YZ yazıyor…');
+    const err = await writeGuides(ctx, [di]);
+    if (err) toast(err.message, 5000);
+    if (ctx.body.isConnected) ctx.rerender();
+  };
+  return h('details', { class: 'day-guide' },
+    h('summary', {}, '📖 ' + g.title),
+    g.text.split(/\n+/).filter(Boolean).map(par => h('p', {}, par)),
+    g.dishes.length > 0 && h('p', { class: 'small' }, h('b', {}, '🍽️ ' + t('Tadılacaklar') + ': '), g.dishes.map(d => `${d.name} — ${d.note}`).join(' · ')),
+    g.tip && h('p', { class: 'small' }, '💡 ' + g.tip),
+    stale && aiReady() && h('button', { class: 'link-btn', type: 'button', onclick: refresh }, t('Plan değişti; bu günün rehberini yenile')));
 }
 
 function dayCard(ctx, di) {
@@ -215,6 +296,7 @@ function dayCard(ctx, di) {
       h('div', {}, h('div', { class: 'day-num' }, dayLabel(di + 1) + (where ? ` · ${where}` : '')), h('div', { class: 'day-date' }, fmtDayLong(day.date))),
       wx && wxPill(wx, trip.weather.source)),
     longDrive && h('div', { class: 'note warn day-note' }, t('Bu gün {d} yol var. Arada bir şehirde gece kalmayı düşün.', { d: fmtDur(day.drive) })),
+    dayGuideBlock(ctx, di),
     day.stops.length || (trip.route && tl.items.length) ? list : h('p', { class: 'muted day-empty' }, t('Bu güne henüz yer eklenmedi. Aşağıdaki "Vakit kalırsa" listesinden ekleyebilirsin.')),
     day.stops.length > 0 && h('footer', { class: 'day-foot' },
       h('span', {}, t('Gezi {v} · yol {r} · bitiş ~{e}', { v: fmtDur(tl.visitMin), r: fmtDur(tl.travelMin), e: fmtClock(tl.end) })),

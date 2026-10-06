@@ -12,6 +12,20 @@ Telefonda uygulama gibi çalışan (PWA) gezi planlayıcı. Günübirlik ve uzun
 - İnternetsiz açılır, veriler sadece cihazda saklanır, hesap gerekmez.
 - Türkçe, İngilizce ve Fransızca (Ayarlar → Dil). Yer adları ve Wikipedia özetleri de seçilen dilde gelir.
 
+## Yapay zekâ (isteğe bağlı)
+
+- **Anlat, ben planlayayım (Planla):** Gezi serbest metinle anlatılır; YZ isteği yapılandırır, yerler haritada (Nominatim) aranır ve form doldurulur. Plan yine gerçek verilerle çıkar.
+- **YZ gün rehberi (gezi ekranı):** Her gün için kısa yerel rehber metni, yöresel lezzetler ve bir ipucu. Gezide saklanır, internetsiz okunur. Plan değişirse o gün için "yenile" çıkar.
+- YZ açılış saati, fiyat, mesafe söylemez; bunlar gerçek kaynaklardan gelir.
+
+Mimari: Claude API anahtarı uygulamada değil, Netlify'daki ara sunucuda (`netlify/functions/ai.mjs`) durur. Sunucu yalnızca tanımlı işleri yapar (`ping`, `parse`, `day`) ve erişim kodu ister. Uygulama GitHub Pages'te kalır; Netlify aynı depodan uygulamanın bir kopyasını ve sunucuyu yayınlar.
+
+Kurulum:
+1. console.anthropic.com → hesap (Google ile girilebilir) → Billing'den kredi yükle ve aylık harcama sınırı koy → API Keys'den anahtar oluştur. (claude.ai aboneliği API kullanımını kapsamaz; API ayrı ödenir.)
+2. Netlify → Add new site → Import an existing project → GitHub → `Alanmett/rota`. Site adı: `rota-alanmett` (farklıysa uygulamada Ayarlar > Yapay zekâ > Gelişmiş'e site adresini yaz).
+3. Netlify → Site configuration → Environment variables: `ANTHROPIC_API_KEY` (anahtar) ve `ROTA_ACCESS_CODE` (kendi belirlediğin parola). İsteğe bağlı `AI_MODEL` (varsayılan `claude-haiku-4-5-20251001`). Sonra Deploys → Trigger deploy.
+4. Uygulamada Ayarlar > Yapay zekâ > Erişim kodu → aynı parola → "Bağlantıyı dene".
+
 ## Çeviriler
 
 Kaynak dil Türkçe: koddaki metinler `t('Türkçe metin')` ile yazılır, çevirileri `js/i18n/en.js` ve `js/i18n/fr.js` içindedir. Tekil/çoğul için: `"{n} {n:night|nights}"`. Yeni metin ekledikten sonra eksik çevirileri bulmak için:
