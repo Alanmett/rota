@@ -144,13 +144,25 @@ export function renderSuggest(root) {
       h('span', { class: 'chev', 'aria-hidden': 'true' }, '›'));
   }
 
+  // Önerileri ekrandan kaldırır; seçimler (başlangıç, süre, ülkeler) yerinde kalır
+  function clearResults() {
+    map?.remove(); map = null;
+    state.results = null;
+    results.replaceChildren();
+    goBtn.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    toast(t('Liste temizlendi'));
+  }
+  const clearBtn = () => h('div', { class: 'btn-row' },
+    h('button', { class: 'btn small', type: 'button', onclick: clearResults }, '🗑️ ' + t('Listeyi temizle')));
+
   function renderResults() {
     map?.remove(); map = null;
     const list = state.results || [];
     if (!list.length) {
       fill(results, h('div', { class: 'empty' },
         h('h2', {}, t('Bu aralıkta öneri bulamadım')),
-        h('p', { class: 'muted' }, t('Süre aralığını genişletmeyi, ülke filtresini kaldırmayı ya da başka yer türleri seçmeyi dene.'))));
+        h('p', { class: 'muted' }, t('Süre aralığını genişletmeyi, ülke filtresini kaldırmayı ya da başka yer türleri seçmeyi dene.')),
+        clearBtn()));
       return;
     }
     let content;
@@ -176,6 +188,7 @@ export function renderSuggest(root) {
       h('div', { class: 'results-head' },
         h('b', {}, t('{n} öneri', { n: list.length })),
         segmented([{ value: 'list', label: t('Liste') }, { value: 'map', label: t('Harita') }], state.view, v => { state.view = v; renderResults(); })),
+      clearBtn(),
       state.len === 'gun' && state.min >= 2.5 && h('div', { class: 'note warn' },
         t('Tek yön {a}+ saat, günübirlik için yorucu olur (gidiş-dönüş {b}+ saat yol). Bir gece kalmayı düşün; "Kaç gün?" kısmından "Hafta sonu"nu seçebilirsin.', { a: decimal(state.min), b: decimal(state.min * 2) })),
       content,

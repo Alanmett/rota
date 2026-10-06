@@ -716,4 +716,6 @@ export default {
   "Gönder": "Send",
   "Yeni istek": "New request",
   "Enter ile gönder · Shift+Enter yeni satır": "Enter to send · Shift+Enter for a new line",
+  "Liste temizlendi": "List cleared",
+  "Listeyi temizle": "Clear list",
 };
