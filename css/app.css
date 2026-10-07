@@ -282,8 +282,8 @@ dialog.sheet::backdrop { background: rgb(0 0 0 / .45); }
 /* ---------- gezi ---------- */
 .trip-meta { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 6px; }
 .trip-meta span { padding: 3px 10px; border: 1px solid var(--line); border-radius: 99px; background: var(--surface); font-size: .82rem; }
-.subnav { display: grid; grid-template-columns: repeat(4, 1fr); gap: 4px; padding: 4px; border-radius: 14px; background: var(--surface-2); }
-.subnav a { padding: 9px 4px; border-radius: 10px; color: var(--muted); font-weight: 600; font-size: .9rem; text-align: center; text-decoration: none; }
+.subnav { display: grid; grid-template-columns: repeat(5, 1fr); gap: 3px; padding: 4px; border-radius: 14px; background: var(--surface-2); }
+.subnav a { padding: 9px 2px; border-radius: 10px; color: var(--muted); font-weight: 600; font-size: .82rem; text-align: center; text-decoration: none; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .subnav a.on { background: var(--surface); color: var(--primary); box-shadow: 0 1px 3px rgb(0 0 0 / .12); }
 .trip-body > * + * { margin-top: 14px; }
 
@@ -347,6 +347,18 @@ summary.ov-row::-webkit-details-marker { display: none; }
 .route-card > .cost-more { display: inline-block; margin-bottom: 12px; }
 .safety-list .tip { background: var(--surface-2); box-shadow: none; }
 .safety-list .tip p { margin: 4px 0 0; }
+
+/* Hazırlık listesi ve gezi paylaşımı */
+.trip-actions { margin-top: 10px; }
+.pack-head progress { width: 100%; height: 8px; margin: 10px 0 2px; accent-color: var(--primary); }
+.pack-head p { margin: 6px 0 0; }
+.pack-group .check { padding: 8px 0; border-bottom: 1px solid var(--line); align-items: flex-start; }
+.pack-group .check:last-of-type { border-bottom: 0; }
+.pack-item span { flex: 1; }
+.pack-item small { display: block; margin-top: 2px; line-height: 1.35; }
+.pack-item:has(input:checked) > span { color: var(--muted); text-decoration: line-through; }
+.pack-add { display: flex; gap: 8px; margin-top: 8px; }
+.pack-add input { flex: 1; min-width: 0; }
 
 /* Ana işlem düğmesi uzun formlarda ekranın altında hazır dursun */
 .sticky-cta { position: sticky; bottom: calc(var(--tabbar-h) + env(safe-area-inset-bottom) + 10px); z-index: 5; box-shadow: 0 6px 18px rgba(0, 0, 0, .18); }

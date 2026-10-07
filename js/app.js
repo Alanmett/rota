@@ -24,7 +24,7 @@ const routes = [
   [/^#\/kesfet$/, renderNear, 'kesfet', t('Keşfet')],
   [/^#\/planla$/, renderPlan, 'planla', t('Gezi planla')],
   [/^#\/geziler$/, renderTrips, 'geziler', t('Gezilerim')],
-  [/^#\/gezi\/([\w-]+)(?:\/(plan|harita|butce|bilgi))?$/, renderTrip, 'geziler', t('Gezi')],
+  [/^#\/gezi\/([\w-]+)(?:\/(plan|harita|butce|hazirlik|bilgi))?$/, renderTrip, 'geziler', t('Gezi')],
   [/^#\/ayarlar$/, renderSettings, 'ayarlar', t('Ayarlar')],
 ];
 

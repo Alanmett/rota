@@ -1,6 +1,8 @@
-// Gezi ekranı: Plan · Harita · Bütçe · Bilgiler
+// Gezi ekranı: Plan · Harita · Bütçe · Hazırlık · Bilgiler
 
 import { h, fill, toast, openSheet, closeSheet, setTitle, onLeave, linkBtn, emptyState, tappable, spinner } from '../ui.js';
+import { buildPacking, packState, packingProgress, PACK_CATS } from '../packing.js';
+import { tripText, shareText, downloadICS } from '../share.js';
 import { getTrip, saveTrip, deleteTrip, getSettings } from '../store.js';
 import { computeTimeline, gmapsDayLink, gmapsDir, bestInsertIndex, PACES, TRANSPORTS, LEG_EMOJI } from '../planner.js';
 import { computeBudget, STAYS, stayOf, FOODS, foodOf, savingTips, factorNote, destCurrency, ticketInfo } from '../budget.js';
@@ -15,7 +17,7 @@ import { aiReady, aiDayGuide, aiSafety, guideSig } from '../ai.js';
 import { fmtDur, fmtKm, fmtClock, fmtMoney, fmtNum, fmtDay, fmtDayLong, fmtRange, todayISO, currencySymbol } from '../util.js';
 import { t, getLang, locale } from '../i18n.js';
 
-const TABS = [['plan', t('Plan')], ['harita', t('Harita')], ['butce', t('Bütçe')], ['bilgi', t('Bilgiler')]];
+const TABS = [['plan', t('Plan')], ['harita', t('Harita')], ['butce', t('Bütçe')], ['hazirlik', t('Hazırlık')], ['bilgi', t('Bilgiler')]];
 const color = di => DAY_COLORS[di % DAY_COLORS.length];
 const dayLabel = n => t('{n}. gün', { n });
 
@@ -28,7 +30,7 @@ export function renderTrip(root, id, tab) {
   }
   setTitle(trip.name);
   const body = h('div', { class: 'trip-body' });
-  const render = { plan: renderPlanTab, harita: renderMapTab, butce: renderBudgetTab, bilgi: renderInfoTab }[tab] || renderPlanTab;
+  const render = { plan: renderPlanTab, harita: renderMapTab, butce: renderBudgetTab, hazirlik: renderPackTab, bilgi: renderInfoTab }[tab] || renderPlanTab;
   const ctx = {
     trip, settings: getSettings(), body,
     save() { trip.updatedAt = Date.now(); saveTrip(trip); },
@@ -171,7 +173,70 @@ function tripHeader(trip) {
       h('span', {}, who),
       h('span', {}, `${tp.emoji} ${tp.label}`),
       h('span', {}, PACES[trip.pace]?.label || ''),
-      trip.hidden && h('span', {}, '🔎 ' + t('Az bilinen yerler'))));
+      trip.hidden && h('span', {}, '🔎 ' + t('Az bilinen yerler'))),
+    h('div', { class: 'btn-row trip-actions' },
+      h('button', { class: 'btn small', type: 'button', onclick: () => shareText(trip.name, tripText(trip, getSettings())) }, '📤 ' + t('Paylaş')),
+      h('button', { class: 'btn small', type: 'button', onclick: () => downloadICS(trip) }, '📅 ' + t('Takvime ekle'))));
+}
+
+// ---------------- Hazırlık ("Yanına al" listesi) ----------------
+function renderPackTab(body, ctx) {
+  const { trip, settings } = ctx;
+  const st = packState(trip);
+  const items = buildPacking(trip, settings);
+  const custom = st.custom || [];
+  const all = [...items.map(i => i.id), ...custom.map(c => c.id)];
+  const count = h('b', {});
+  const bar = h('progress', { max: String(all.length || 1) });
+  const upd = () => {
+    const n = all.filter(id => st.done[id]).length;
+    count.textContent = t('{n}/{m} hazır', { n, m: all.length });
+    bar.value = n;
+  };
+  const toggle = (id, on) => { if (on) st.done[id] = true; else delete st.done[id]; ctx.save(); upd(); };
+  const row = (i, extra) => h('label', { class: 'check pack-item' },
+    h('input', { type: 'checkbox', checked: !!st.done[i.id], onchange: e => toggle(i.id, e.target.checked) }),
+    h('span', {}, i.text, i.note && h('small', { class: 'muted' }, i.note)),
+    extra);
+
+  const groups = Object.entries(PACK_CATS).map(([cat, c]) => {
+    const list = items.filter(i => i.cat === cat);
+    return list.length > 0 && h('section', { class: 'card pack-group' }, h('h2', { class: 'h-sec' }, `${c.emoji} ${c.label}`), list.map(i => row(i)));
+  });
+
+  const input = h('input', { type: 'text', maxlength: '80', placeholder: t('Ör. fotoğraf makinesi, dürbün…'), 'aria-label': t('Kendi maddeni ekle') });
+  const addCustom = () => {
+    const text = input.value.trim();
+    if (!text) return;
+    st.custom = [...(st.custom || []), { id: 'c' + Date.now().toString(36), text }];
+    ctx.save(); ctx.rerender();
+  };
+  input.addEventListener('keydown', e => { if (e.key === 'Enter') { e.preventDefault(); addCustom(); } });
+  const removeCustom = id => { st.custom = st.custom.filter(c => c.id !== id); delete st.done[id]; ctx.save(); ctx.rerender(); };
+
+  const shareList = () => {
+    const lines = [`🧳 ${trip.name} · ${t('Yanına al')}`];
+    for (const [cat, c] of Object.entries(PACK_CATS)) {
+      const list = items.filter(i => i.cat === cat);
+      if (!list.length) continue;
+      lines.push('', `${c.emoji} ${c.label}`, ...list.map(i => `${st.done[i.id] ? '☑' : '☐'} ${i.text}`));
+    }
+    if (custom.length) lines.push('', `✍️ ${t('Kendi eklediklerin')}`, ...custom.map(i => `${st.done[i.id] ? '☑' : '☐'} ${i.text}`));
+    shareText(t('Yanına al'), lines.join('\n'));
+  };
+
+  fill(body,
+    h('section', { class: 'card pack-head' },
+      h('div', { class: 'cost-head' }, h('div', {}, h('div', { class: 'muted small' }, '🧳 ' + t('Yanına al')), count),
+        h('button', { class: 'btn small', type: 'button', onclick: shareList }, '📤 ' + t('Paylaş'))),
+      bar,
+      h('p', { class: 'muted small' }, t('Liste gezinin ülkelerine, mevsimine, hava tahminine, aracına, kişilere ve planlanan yerlere göre hazırlandı; plan değişince kendini günceller.'))),
+    groups,
+    h('section', { class: 'card pack-group' },
+      h('h2', { class: 'h-sec' }, '✍️ ' + t('Kendi eklediklerin')),
+      custom.map(c => row(c, h('button', { class: 'icon-btn', type: 'button', 'aria-label': t('{p}: sil', { p: c.text }), onclick: e => { e.preventDefault(); removeCustom(c.id); } }, '✕'))),
+      h('div', { class: 'pack-add' }, input, h('button', { class: 'btn small', type: 'button', onclick: addCustom }, t('Ekle')))));
+  upd();
 }
 
 // Rota özeti: şehirler sırasıyla, gece sayıları, yol süreleri ve konaklama araması
@@ -252,6 +317,10 @@ function overviewCard(ctx) {
       h('div', { class: 'ov-main' },
         h('b', {}, t('Güvenlik ve dikkat edilecekler')),
         h('div', { class: 'muted small' }, nSafety ? t('{n} güvenlik uyarısı · hava · ülke bilgisi', { n: nSafety }) : t('Kapkaç, dolandırıcılık, hava, ülke bilgisi'))),
+      chev.cloneNode(true)),
+    h('a', { class: 'ov-row', href: `#/gezi/${trip.id}/hazirlik` },
+      h('span', { class: 'ov-ico', 'aria-hidden': 'true' }, '🧳'),
+      h('div', { class: 'ov-main' }, h('b', {}, t('Yanına al')), h('div', { class: 'muted small' }, t('{n}/{m} hazır', packingProgress(trip, ctx.settings)))),
       chev.cloneNode(true)),
     guideRow(ctx));
 }
