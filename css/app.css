@@ -360,6 +360,29 @@ summary.ov-row::-webkit-details-marker { display: none; }
 .pack-add { display: flex; gap: 8px; margin-top: 8px; }
 .pack-add input { flex: 1; min-width: 0; }
 
+/* Bugün kartı ve bugünün günü */
+.today-card { margin-bottom: 14px; border: 2px solid var(--primary); }
+.today-card p { margin: 8px 0 0; }
+.today-card .btn-row { margin-top: 10px; align-items: center; }
+.today-head { display: flex; align-items: center; gap: 6px; }
+.today-dot { width: 10px; height: 10px; border-radius: 50%; background: var(--ok, #16a34a); box-shadow: 0 0 0 4px color-mix(in srgb, var(--ok, #16a34a) 25%, transparent); }
+.day.today { outline: 2px solid var(--primary); outline-offset: -2px; }
+.today-badge { margin-left: 8px; vertical-align: 2px; }
+.tl-stop.current .tl-name, .tl-stop.next .tl-name { color: var(--primary); }
+.tl-stop .badge.ok { margin-bottom: 2px; }
+
+/* Harcamalar */
+.expenses progress { width: 100%; height: 8px; margin: 10px 0 4px; accent-color: var(--primary); }
+.expenses progress.over { accent-color: var(--bad, #b91c1c); }
+.warn-text { color: var(--bad, #b91c1c); font-weight: 650; }
+.exp-cats { display: grid; gap: 4px; margin: 8px 0; }
+.exp-cat { display: flex; justify-content: space-between; gap: 10px; font-size: .9rem; }
+.exp-list summary { cursor: pointer; color: var(--primary); font-weight: 650; padding: 4px 0; }
+.exp-row { display: flex; align-items: center; gap: 8px; padding: 6px 0; border-bottom: 1px solid var(--line); }
+.exp-row .exp-what { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.exp-amount { font-size: 1.4rem; font-weight: 700; }
+.exp-form .chips { margin: 4px 0 10px; }
+
 /* Ana işlem düğmesi uzun formlarda ekranın altında hazır dursun */
 .sticky-cta { position: sticky; bottom: calc(var(--tabbar-h) + env(safe-area-inset-bottom) + 10px); z-index: 5; box-shadow: 0 6px 18px rgba(0, 0, 0, .18); }
 

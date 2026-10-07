@@ -5,6 +5,7 @@ import { reverseGeocode, wikiForTags } from '../api.js';
 import { suggest, KINDS, COUNTRY_NAMES, flag } from '../suggest.js';
 import { getSettings, getPref, savePref } from '../store.js';
 import { prefillPlan, addToRoute } from './plan.js';
+import { mountToday } from '../today.js';
 import { setNearLocation } from './near.js';
 import { placeSearch } from '../components.js';
 import { wikiMoreLabel } from '../details.js';
@@ -35,6 +36,7 @@ const hoursOf = p => p.hours ?? p.est;
 const decimal = v => (getLang() === 'en' ? String(v) : String(v).replace('.', ','));
 
 export function renderSuggest(root) {
+  mountToday(root); // bir gezinin içindeysen önce bugünün durumu
   const settings = getSettings();
   if (!state.origin && settings.home) state.origin = { ...settings.home, src: 'home' };
   state.mode ||= settings.transport === 'araba' ? 'araba' : 'tren';

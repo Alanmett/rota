@@ -3,6 +3,8 @@
 import { h, fill, toast, openSheet, closeSheet, setTitle, onLeave, linkBtn, emptyState, tappable, spinner } from '../ui.js';
 import { buildPacking, packState, packingProgress, PACK_CATS } from '../packing.js';
 import { tripText, shareText, downloadICS } from '../share.js';
+import { dayStatus } from '../today.js';
+import { EXP_CATS, expensesOf, spentTotal, spentByCat, expenseSheet, removeExpense, fmtOrig } from '../expenses.js';
 import { getTrip, saveTrip, deleteTrip, getSettings } from '../store.js';
 import { computeTimeline, gmapsDayLink, gmapsDir, bestInsertIndex, PACES, TRANSPORTS, LEG_EMOJI } from '../planner.js';
 import { computeBudget, STAYS, stayOf, FOODS, foodOf, savingTips, factorNote, destCurrency, ticketInfo } from '../budget.js';
@@ -46,6 +48,13 @@ export function renderTrip(root, id, tab) {
     body,
   );
   render(body, ctx);
+  // Gezinin içindeysen plan doğrudan bugünün gününden başlasın
+  if (tab === 'plan') {
+    setTimeout(() => { // sayfa yerleştikten sonra (uygulamanın "başa dön" kaydırmasından da sonra)
+      const el = body.querySelector('.day.today');
+      if (el && el.isConnected && trip.days.length > 1) window.scrollTo({ top: el.getBoundingClientRect().top + window.scrollY - 70 });
+    }, 0);
+  }
   if (tab !== 'harita') maybeRefreshWeather(ctx);
   if (tab === 'plan' || tab === 'harita') maybeAddParking(ctx, tab === 'plan');
   if (tab === 'bilgi') { maybeAddCountry(ctx); maybeLoadSafety(ctx); }
@@ -408,6 +417,10 @@ function dayCard(ctx, di) {
   const wx = trip.weather?.days?.[day.date];
   const list = h('ol', { class: 'timeline' });
   let n = 0;
+  // Gezinin içindeysen: bugünün günü ve şu anki / sıradaki durak işaretlenir
+  const isToday = day.date === todayISO();
+  const st = isToday ? dayStatus(trip, di) : null;
+  const markOf = id => (st?.current?.id === id ? 'current' : st?.next?.id === id ? 'next' : null);
   if (di === 0 && trip.origin && day.stops.length) {
     list.append(h('li', { class: 'tl-start' }, h('div', { class: 'tl-time' }, fmtClock(day.startMin)), h('div', { class: 'tl-num me', 'aria-hidden': 'true' }), h('div', { class: 'tl-body' }, h('div', { class: 'tl-meta' }, t('Bulunduğun yerden çıkış')))));
   }
@@ -428,7 +441,7 @@ function dayCard(ctx, di) {
     } else {
       n++;
       if (it.parkHere) { const pk = parkingItem(trip, it.id); if (pk) list.append(pk); }
-      list.append(stopItem(ctx, di, day.stops.indexOf(it.id), it, n));
+      list.append(stopItem(ctx, di, day.stops.indexOf(it.id), it, n, markOf(it.id)));
     }
   }
   if (day.stops.length && day.dinner?.length) list.append(mealItem(t('Akşam yemeği'), null, day.dinner));
@@ -438,9 +451,10 @@ function dayCard(ctx, di) {
   const route = gmapsDayLink(trip, di);
   const where = trip.route && (day.sleep?.name || day.to?.name);
   const longDrive = (day.drive || 0) > 480;
-  return h('section', { class: 'day', style: `--day:${color(di)}` },
+  return h('section', { class: 'day' + (isToday ? ' today' : ''), style: `--day:${color(di)}` },
     h('header', { class: 'day-head' },
-      h('div', {}, h('div', { class: 'day-num' }, dayLabel(di + 1) + (where ? ` · ${where}` : '')), h('div', { class: 'day-date' }, fmtDayLong(day.date))),
+      h('div', {}, h('div', { class: 'day-num' }, dayLabel(di + 1) + (where ? ` · ${where}` : ''), isToday && h('span', { class: 'badge ok today-badge' }, t('Bugün'))),
+        h('div', { class: 'day-date' }, fmtDayLong(day.date))),
       wx && wxPill(wx, trip.weather.source)),
     longDrive && h('div', { class: 'note warn day-note' }, t('Bu gün {d} yol var. Arada bir şehirde gece kalmayı düşün.', { d: fmtDur(day.drive) })),
     dayGuideBlock(ctx, di),
@@ -460,12 +474,14 @@ function ticketText(p, ctx) {
   return p.tags?.fee === 'no' ? ` · ${t('ücretsiz')}` : '';
 }
 
-function stopItem(ctx, di, si, it, n) {
+// mark: bugün için 'current' (şu an burada olmalısın) ya da 'next' (sıradaki durak)
+function stopItem(ctx, di, si, it, n, mark = null) {
   const p = it.place;
-  return h('li', { class: 'tl-stop' },
+  return h('li', { class: 'tl-stop' + (mark ? ` ${mark}` : '') },
     h('div', { class: 'tl-time' }, fmtClock(it.start)),
     h('div', { class: 'tl-num', style: `background:${color(di)}` }, String(n)),
     tappable({ class: 'tl-body', onclick: () => showPlaceDetail(p, { date: ctx.trip.days[di].date }) },
+      mark && h('span', { class: 'badge ok' }, mark === 'current' ? t('Şu an') : t('Sıradaki')),
       h('div', { class: 'tl-name' }, p.name),
       h('div', { class: 'tl-meta' }, `${catEmoji(p)} ${typeLabel(p)} · ~${fmtDur(p.dur)}${ticketText(p, ctx)}`),
       it.warn.map(w => h('div', { class: 'tl-warn' }, `⚠️ ${w}`))),
@@ -647,6 +663,43 @@ function renderMapTab(body, ctx) {
 }
 
 // ---------------- Bütçe ----------------
+// Gezi sırasındaki harcamalar: toplam ve tür bazında tahminle karşılaştırma, harcama listesi
+function expenseSection(ctx, b) {
+  const { trip } = ctx;
+  const list = expensesOf(trip);
+  const spent = spentTotal(trip);
+  const byCat = spentByCat(trip);
+  const planned = cat => b.lines.filter(l => EXP_CATS[cat].lines.includes(l.key)).reduce((s, l) => s + l.amount, 0);
+  const add = h('button', { class: 'btn small primary', type: 'button', onclick: () => expenseSheet(trip, () => ctx.rerender()) }, '➕ ' + t('Harcama ekle'));
+  if (!list.length) {
+    return h('section', { class: 'card expenses' },
+      h('div', { class: 'cost-head' },
+        h('div', {}, h('b', {}, '💸 ' + t('Harcamalar')), h('div', { class: 'muted small' }, t('Gezi sırasında harcadıklarını ekle; tahminle karşılaştırılır.'))),
+        add));
+  }
+  const over = spent > b.total;
+  const fmtDate = iso => new Intl.DateTimeFormat(locale(), { day: 'numeric', month: 'short' }).format(new Date(iso + 'T12:00'));
+  return h('section', { class: 'card expenses' },
+    h('div', { class: 'cost-head' },
+      h('div', {}, h('div', { class: 'muted small' }, '💸 ' + t('Harcanan')),
+        h('b', { class: 'ov-big' }, fmtMoney(spent)), h('span', { class: 'muted small' }, '  ' + t('tahmini {p}', { p: fmtMoney(b.total) }))),
+      add),
+    h('progress', { class: 'exp-bar' + (over ? ' over' : ''), max: String(Math.max(1, b.total)), value: String(Math.min(spent, b.total)) }),
+    over && h('p', { class: 'small warn-text' }, t('Tahmini bütçeyi {p} aştın.', { p: fmtMoney(spent - b.total) })),
+    h('div', { class: 'exp-cats' }, Object.entries(EXP_CATS).filter(([k]) => byCat[k]).map(([k, c]) => {
+      const p = planned(k);
+      return h('div', { class: 'exp-cat' }, h('span', {}, `${c.emoji} ${c.label}`),
+        h('span', { class: p && byCat[k] > p ? 'warn-text' : '' }, fmtMoney(byCat[k]) + (p ? ` / ${fmtMoney(p)}` : '')));
+    })),
+    h('details', { class: 'small exp-list' },
+      h('summary', {}, t('Tüm harcamalar ({n})', { n: list.length })),
+      [...list].reverse().map(e => h('div', { class: 'exp-row' },
+        h('span', { class: 'muted' }, fmtDate(e.date)),
+        h('span', { class: 'exp-what' }, `${EXP_CATS[e.cat]?.emoji || '🧾'} ${e.note || EXP_CATS[e.cat]?.label || ''}`),
+        h('span', {}, fmtMoney(e.amount), e.orig && h('small', { class: 'muted' }, ` (${fmtOrig(e)})`)),
+        h('button', { class: 'icon-btn', type: 'button', 'aria-label': t('Harcamayı sil'), onclick: () => { removeExpense(trip, e.id); ctx.rerender(); } }, '✕')))));
+}
+
 function renderBudgetTab(body, ctx) {
   const { trip, settings } = ctx;
   const b = computeBudget(trip, settings);
@@ -674,6 +727,7 @@ function renderBudgetTab(body, ctx) {
       h('div', { class: 'big' }, fmtMoney(b.total)),
       h('div', { class: 'muted small' }, t('Kişi başı yaklaşık {p} · {n} kişi', { p: fmtMoney(b.perPerson), n: people })),
       fx),
+    expenseSection(ctx, b),
     nights > 0 && h('section', { class: 'card' },
       h('h2', { class: 'h-sec' }, t('Nerede kalacaksın?')),
       h('div', { class: 'chips' }, Object.entries(STAYS).map(([k, s]) => h('button', {

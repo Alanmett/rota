@@ -1,13 +1,13 @@
 // Çevrimdışı destek: uygulama dosyaları önbelleğe alınır; gezilen harita parçaları ve
 // açılan Wikipedia özetleri de saklanır. Kayıtlı geziler zaten cihazda (localStorage).
 
-const VERSION = 'rota-v15';
+const VERSION = 'rota-v16';
 const SHELL = [
   './', 'index.html', 'manifest.webmanifest', 'css/app.css', 'data/destinations.json',
   'js/i18n.js', 'js/i18n/en.js', 'js/i18n/fr.js',
   'js/app.js', 'js/ui.js', 'js/util.js', 'js/store.js', 'js/api.js', 'js/hours.js', 'js/places.js',
   'js/planner.js', 'js/budget.js', 'js/tips.js', 'js/tripgen.js', 'js/map.js', 'js/details.js', 'js/components.js',
-  'js/suggest.js', 'js/route.js', 'js/ai.js', 'js/packing.js', 'js/share.js', 'js/views/suggest.js',
+  'js/suggest.js', 'js/route.js', 'js/ai.js', 'js/packing.js', 'js/share.js', 'js/today.js', 'js/expenses.js', 'js/views/suggest.js',
   'js/views/near.js', 'js/views/plan.js', 'js/views/trip.js', 'js/views/trips.js', 'js/views/settings.js',
   'icons/icon.svg', 'icons/icon-192.png', 'icons/icon-512.png',
   'https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css',

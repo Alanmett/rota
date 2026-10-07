@@ -2,6 +2,7 @@
 
 import { h, emptyState, toast } from '../ui.js';
 import { downloadBackup } from './settings.js';
+import { mountToday } from '../today.js';
 import { listTrips, getSettings } from '../store.js';
 import { computeBudget } from '../budget.js';
 import { fmtRange, fmtMoney, todayISO } from '../util.js';
@@ -31,6 +32,7 @@ export function renderTrips(root) {
       h('a', { class: 'btn', href: '#/planla' }, t('Gezi planla'))));
     return;
   }
+  mountToday(root);
   // Geziler yalnızca bu cihazda: 30 günden uzun süredir yedek alınmadıysa hatırlat
   if (Date.now() - (settings.lastBackup || 0) > 30 * 864e5) {
     const note = h('div', { class: 'note backup-note' },
