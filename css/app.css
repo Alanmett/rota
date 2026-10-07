@@ -329,6 +329,28 @@ dialog.sheet::backdrop { background: rgb(0 0 0 / .45); }
 .cost-more { margin-top: 8px; color: var(--primary); font-weight: 650; }
 .day-cost { font-weight: 650; color: var(--text); }
 
+/* Gezi özeti (maliyet · güvenlik · YZ): tek kart, satır satır */
+.overview, .route-card { padding: 2px 16px; margin-bottom: 14px; }
+.ov-row { display: flex; align-items: center; gap: 12px; padding: 12px 0; color: var(--text); text-decoration: none; border-bottom: 1px solid var(--line); }
+.overview > :last-child, .route-card > summary.ov-row { border-bottom: 0; }
+.route-card[open] > summary.ov-row { border-bottom: 1px solid var(--line); }
+.ov-ico { flex: none; width: 26px; text-align: center; font-size: 1.25rem; }
+.ov-main { flex: 1; min-width: 0; }
+.ov-big { font-size: 1.25rem; font-weight: 800; letter-spacing: -.01em; }
+.ov-details { padding: 0 0 10px 38px; border-bottom: 1px solid var(--line); }
+.ov-details summary { cursor: pointer; color: var(--primary); font-weight: 650; }
+.ov-details p { margin: 6px 0 0; line-height: 1.5; }
+summary.ov-row { cursor: pointer; list-style: none; }
+summary.ov-row::-webkit-details-marker { display: none; }
+.route-card[open] .chev { transform: rotate(180deg); }
+.route-card .rt-list { margin-bottom: 8px; }
+.route-card > .cost-more { display: inline-block; margin-bottom: 12px; }
+.safety-list .tip { background: var(--surface-2); box-shadow: none; }
+.safety-list .tip p { margin: 4px 0 0; }
+
+/* Ana işlem düğmesi uzun formlarda ekranın altında hazır dursun */
+.sticky-cta { position: sticky; bottom: calc(var(--tabbar-h) + env(safe-area-inset-bottom) + 10px); z-index: 5; box-shadow: 0 6px 18px rgba(0, 0, 0, .18); }
+
 /* Yapay zekâ */
 .ai-ask { margin-bottom: 14px; }
 .ai-text { width: 100%; box-sizing: border-box; min-height: 84px; padding: 10px 12px; border: 1px solid var(--line); border-radius: 12px; background: var(--bg); color: var(--text); font: inherit; resize: vertical; margin-bottom: 8px; }

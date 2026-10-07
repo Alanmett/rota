@@ -55,20 +55,22 @@ function radiusControl() {
 export function renderNear(root) {
   const locCard = h('section', { class: 'card loc-card' });
   const results = h('div', { class: 'results' });
-  const goBtn = h('button', { class: 'btn primary wide', onclick: search }, t('Çevremi keşfet'));
+  const goBtn = h('button', { class: 'btn primary wide sticky-cta', onclick: search }, t('Çevremi keşfet'));
   let map = null;
 
   function renderLoc(searching = false) {
     const wx = state.weather;
+    const home = getSettings().home;
     fill(locCard,
       h('div', { class: 'loc-line' },
-        h('span', { class: 'loc-pin', 'aria-hidden': 'true' }, '📍'),
+        h('span', { class: 'loc-pin', 'aria-hidden': 'true' }, state.loc?.home ? '🏠' : '📍'),
         h('div', {},
           h('div', { class: 'loc-name' }, state.loc ? state.loc.label : t('Konum seçilmedi')),
           wx
             ? h('div', { class: 'muted small' }, `${WX(wx.code)[0]} ${Math.round(wx.temp)}° ${WX(wx.code)[1]} · ${t('bugün')} ${Math.round(wx.tmin)}°/${Math.round(wx.tmax)}°${wx.pop >= 30 ? ` · ${t('yağış')} ${wx.pop}%` : ''}`)
             : !state.loc && h('div', { class: 'muted small' }, t('Konumunu kullan ya da bir yer ara.')))),
       h('div', { class: 'btn-row' },
+        home && h('button', { class: 'btn', onclick: () => setLoc({ lat: home.lat, lon: home.lon, name: home.label, label: home.label, cc: getSettings().homeCountry, gps: false, home: true }) }, '🏠 ' + t('Ev')),
         h('button', { class: 'btn', onclick: useGps }, '◎ ' + t('Konumumu kullan')),
         h('button', { class: 'btn', onclick: () => renderLoc(!searching) }, searching ? t('Vazgeç') : '🔎 ' + t('Başka yer'))),
       searching && placeSearch({ placeholder: t('Şehir, ilçe, semt…'), autofocus: true, onPick: r => setLoc({ ...r, gps: false }) }),

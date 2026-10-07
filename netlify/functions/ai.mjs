@@ -170,6 +170,7 @@ async function dayGuide(p) {
     `Write everything in ${lang}. Warm, concrete and specific; no clichés, no emojis, no markdown.`,
     'Talk only about the places listed for the day and the area they are in. Never invent places, events or shops.',
     'Never state opening hours, prices, phone numbers, exact distances or travel times: the app shows real data for those.',
+    'If one of the listed places is well known for needing tickets booked in advance (timed entry, sells out), say so in the tip.',
     'If you are not sure about a fact, leave it out.',
   ].join('\n');
   const user = [
@@ -183,10 +184,51 @@ async function dayGuide(p) {
   return callClaude({ system, user, tool: DAY_TOOL, maxTokens: 700 });
 }
 
+// ---------- 3. Güvenlik özeti (Wikivoyage "Stay safe" metninden) ----------
+const SAFETY_TOOL = {
+  name: 'safety_brief',
+  description: 'Short safety brief for travellers, based only on the given guide text.',
+  input_schema: {
+    type: 'object',
+    properties: {
+      summary: { type: 'string', description: 'One sentence: the overall picture (e.g. generally safe, main issue is pickpocketing in crowded sights)' },
+      items: {
+        type: 'array', maxItems: 6,
+        items: {
+          type: 'object',
+          properties: {
+            topic: { type: 'string', enum: ['theft', 'scam', 'traffic', 'night', 'nature', 'health', 'transport', 'other'] },
+            title: { type: 'string', description: 'max 6 words' },
+            text: { type: 'string', description: 'max 35 words; concrete: where, when, how it happens, what to do' },
+          },
+          required: ['topic', 'title', 'text'],
+        },
+      },
+    },
+    required: ['summary', 'items'],
+  },
+};
+
+async function safetyBrief(p) {
+  const text = String(p.text || '').slice(0, 12000);
+  if (text.length < 80) throw Object.assign(new Error('empty'), { code: 'bad_request' });
+  const lang = LANG_NAMES[p.lang] || 'Turkish';
+  const system = [
+    'You summarise the "Stay safe" section of a Wikivoyage travel guide for travellers using the Rota app.',
+    `Write in ${lang}. Calm, factual and practical; no fear-mongering, no emojis, no markdown.`,
+    'Use ONLY information found in the provided text. Never add facts, numbers or places that are not in it.',
+    'Order items by practical importance for a tourist: pickpocketing and theft hotspots, common scams (describe how they work), areas or times to avoid, traffic and transport, nature or health risks.',
+    'Keep specific place names, streets, stations and scam descriptions from the text. Skip generic advice that applies everywhere.',
+  ].join('\n');
+  const user = `Place: ${String(p.place || '').slice(0, 80)} (${p.scope === 'country' ? 'country-level guide' : 'city guide'}).\n\nWikivoyage "Stay safe" text:\n${text}`;
+  return callClaude({ system, user, tool: SAFETY_TOOL, maxTokens: 900 });
+}
+
 const TASKS = {
   ping: () => callClaude({ system: 'Reply with OK.', user: 'ping', maxTokens: 1 }),
   parse: parseTrip,
   day: dayGuide,
+  safety: safetyBrief,
 };
 
 export default async req => {

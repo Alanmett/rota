@@ -43,7 +43,7 @@ export function renderSuggest(root) {
   const timeBox = h('div');
   const countryBox = h('div');
   const results = h('div', { class: 'results' });
-  const goBtn = h('button', { class: 'btn primary wide', onclick: run }, '✨ ' + t('Bana yer öner'));
+  const goBtn = h('button', { class: 'btn primary wide sticky-cta', onclick: run }, '✨ ' + t('Bana yer öner'));
   let map = null;
 
   function renderOrigin(searching = false) {
@@ -253,15 +253,16 @@ export function renderSuggest(root) {
     location.hash = '#/kesfet';
   }
 
+  // Sıra: nereden → kaç gün → ne kadar yol (gezinin süresi göze alınacak yolu belirler) → nasıl → nereye → ne tür
   root.append(
     originBox,
+    h('section', {}, h('h2', { class: 'h-sec' }, t('Kaç gün?')), segmented(LENGTHS, state.len, v => { state.len = v; persist(); if (state.results) renderResults(); })),
     h('section', {}, h('h2', { class: 'h-sec' }, t('Ne kadar yol?')), timeBox),
     h('section', {}, h('h2', { class: 'h-sec' }, t('Nasıl gideceksin?')),
       segmented([{ value: 'araba', label: '🚗 ' + t('Araba') }, { value: 'tren', label: '🚆 ' + t('Tren') }], state.mode, v => { state.mode = v; persist(); })),
     h('section', {}, h('h2', { class: 'h-sec' }, t('Hangi ülke?')), countryBox),
     h('section', {}, h('h2', { class: 'h-sec' }, t('Ne tür bir yer?')),
       chips(Object.entries(KINDS).map(([value, k]) => ({ value, ...k })), state.kinds, v => { state.kinds = v; persist(); })),
-    h('section', {}, h('h2', { class: 'h-sec' }, t('Kaç gün?')), segmented(LENGTHS, state.len, v => { state.len = v; persist(); if (state.results) renderResults(); })),
     goBtn,
     results,
   );

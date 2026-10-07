@@ -233,6 +233,57 @@ export async function wikiSearch(q, lang = getLang()) {
   return title ? wikiSummary(lang, title) : null;
 }
 
+// ---------- Wikivoyage "Stay safe" (güvenlik bölümü) ----------
+// Şehrin İngilizce gezi rehberi sayfasındaki güvenlik bölümü (yankesicilik, dolandırıcılık, kaçınılacak yerler…).
+// Şehir sayfasında yoksa ülke sayfasınınki kullanılır. İngilizce rehber en kapsamlısı; YZ bunu kullanıcının diline özetler.
+const WV = 'https://en.wikivoyage.org/w/api.php';
+const WV_COUNTRY = { tr: 'Turkey', cz: 'Czech Republic', gb: 'United Kingdom', va: 'Vatican City' };
+
+async function wvTitleFromWikidata(qid) {
+  const r = await fetchJSON(`https://www.wikidata.org/w/api.php?action=wbgetentities&ids=${encodeURIComponent(qid)}&props=sitelinks&sitefilter=enwikivoyage&format=json&origin=*`, {}, 10000);
+  return r.entities?.[qid]?.sitelinks?.enwikivoyage?.title || null;
+}
+
+function cleanHtml(html) {
+  const doc = new DOMParser().parseFromString(html, 'text/html');
+  doc.querySelectorAll('.mw-editsection, figure, .thumb, table, style, sup, .mw-empty-elt, #toc, .toc').forEach(e => e.remove());
+  return [...doc.querySelectorAll('h2, h3, h4, p, li')]
+    .map(e => e.textContent.replace(/\s+/g, ' ').trim()).filter(Boolean).join('\n');
+}
+
+async function wvStaySafe(title) {
+  const base = `${WV}?action=parse&format=json&redirects=1&origin=*&page=${encodeURIComponent(title)}`;
+  const s = await fetchJSON(`${base}&prop=sections`, {}, 10000);
+  if (!s.parse) return null;
+  const sec = s.parse.sections.find(x => /^stay safe/i.test(x.line));
+  if (!sec) return null;
+  const r = await fetchJSON(`${base}&section=${sec.index}&prop=text&disablelimitreport=1`, {}, 12000);
+  const text = cleanHtml(r.parse?.text?.['*'] || '').replace(/^Stay safe\n?/i, '');
+  return text.length > 80 ? { title: s.parse.title, text, url: `https://en.wikivoyage.org/wiki/${encodeURIComponent(s.parse.title.replace(/ /g, '_'))}#Stay_safe` } : null;
+}
+
+// place: { name, wikidata?, cc? } → { title, url, text, scope: 'city' | 'country' } ya da null
+export async function staySafeFor(place) {
+  let title = null;
+  if (place.wikidata) { try { title = await wvTitleFromWikidata(place.wikidata); } catch { /* aramaya geç */ } }
+  if (!title && place.name) {
+    try {
+      const r = await fetchJSON(`${WV}?action=query&list=search&srsearch=${encodeURIComponent(place.name)}&srlimit=1&format=json&origin=*`, {}, 10000);
+      title = r.query?.search?.[0]?.title || null;
+    } catch { /* ülkeye geç */ }
+  }
+  if (title) {
+    const city = await wvStaySafe(title).catch(() => null);
+    if (city) return { ...city, scope: 'city' };
+  }
+  if (place.cc) {
+    const country = WV_COUNTRY[place.cc] || new Intl.DisplayNames(['en'], { type: 'region' }).of(place.cc.toUpperCase());
+    const c = await wvStaySafe(country).catch(() => null);
+    if (c) return { ...c, scope: 'country' };
+  }
+  return null;
+}
+
 // ---------- Open-Meteo (hava) ----------
 export function WX(code) {
   if (code === 0) return ['☀️', t('Açık')];

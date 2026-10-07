@@ -1,6 +1,7 @@
 // Gezilerim: kayıtlı geziler (yaklaşan / geçmiş).
 
-import { h, emptyState } from '../ui.js';
+import { h, emptyState, toast } from '../ui.js';
+import { downloadBackup } from './settings.js';
 import { listTrips, getSettings } from '../store.js';
 import { computeBudget } from '../budget.js';
 import { fmtRange, fmtMoney, todayISO } from '../util.js';
@@ -29,6 +30,14 @@ export function renderTrips(root) {
       h('a', { class: 'btn primary', href: '#/oner' }, '✨ ' + t('Bana yer öner')),
       h('a', { class: 'btn', href: '#/planla' }, t('Gezi planla'))));
     return;
+  }
+  // Geziler yalnızca bu cihazda: 30 günden uzun süredir yedek alınmadıysa hatırlat
+  if (Date.now() - (settings.lastBackup || 0) > 30 * 864e5) {
+    const note = h('div', { class: 'note backup-note' },
+      h('b', {}, '💾 ' + t('Yedek almayı unutma')), ' ',
+      t('Gezilerin yalnızca bu telefonda duruyor; telefon kaybolursa ya da tarayıcı verileri silinirse geri gelmez.'),
+      h('div', { class: 'btn-row' }, h('button', { class: 'btn small', type: 'button', onclick: () => { downloadBackup(); note.remove(); toast(t('Yedek indirildi. Dosyayı bulutta ya da e-postada saklayabilirsin.'), 4500); } }, '⬇️ ' + t('Yedeği indir'))));
+    root.append(note);
   }
   const today = todayISO();
   const upcoming = trips.filter(x => x.endDate >= today).sort((a, b) => a.startDate.localeCompare(b.startDate));

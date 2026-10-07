@@ -1,6 +1,6 @@
 // Gezi ekranı: Plan · Harita · Bütçe · Bilgiler
 
-import { h, fill, toast, openSheet, closeSheet, setTitle, onLeave, linkBtn, emptyState, tappable } from '../ui.js';
+import { h, fill, toast, openSheet, closeSheet, setTitle, onLeave, linkBtn, emptyState, tappable, spinner } from '../ui.js';
 import { getTrip, saveTrip, deleteTrip, getSettings } from '../store.js';
 import { computeTimeline, gmapsDayLink, gmapsDir, bestInsertIndex, PACES, TRANSPORTS, LEG_EMOJI } from '../planner.js';
 import { computeBudget, STAYS, stayOf, FOODS, foodOf, savingTips, factorNote, destCurrency, ticketInfo } from '../budget.js';
@@ -10,8 +10,8 @@ import { typeLabel, catEmoji, cuisineLabel } from '../places.js';
 import { showPlaceDetail, wikiMoreLabel, parkLink } from '../details.js';
 import { wxPill } from '../components.js';
 import { createMap, numIcon, emojiIcon, meIcon, popupFor, DAY_COLORS } from '../map.js';
-import { WX, exchangeRate, countryInfo } from '../api.js';
-import { aiReady, aiDayGuide, guideSig } from '../ai.js';
+import { WX, exchangeRate, countryInfo, staySafeFor } from '../api.js';
+import { aiReady, aiDayGuide, aiSafety, guideSig } from '../ai.js';
 import { fmtDur, fmtKm, fmtClock, fmtMoney, fmtNum, fmtDay, fmtDayLong, fmtRange, todayISO, currencySymbol } from '../util.js';
 import { t, getLang, locale } from '../i18n.js';
 
@@ -46,7 +46,71 @@ export function renderTrip(root, id, tab) {
   render(body, ctx);
   if (tab !== 'harita') maybeRefreshWeather(ctx);
   if (tab === 'plan' || tab === 'harita') maybeAddParking(ctx, tab === 'plan');
-  if (tab === 'bilgi') maybeAddCountry(ctx);
+  if (tab === 'bilgi') { maybeAddCountry(ctx); maybeLoadSafety(ctx); }
+}
+
+// ---- Güvenlik (Wikivoyage "Stay safe" + YZ özeti) ----
+const SAFETY_ICON = { theft: '👜', scam: '🎭', traffic: '🚦', night: '🌙', nature: '⛰️', health: '🩺', transport: '🚆', other: '⚠️' };
+
+function safetyPlaces(trip) {
+  if (trip.route) return trip.route.cities.filter(c => c.nights > 0).slice(0, 6).map(c => ({ key: c.key, name: c.name, wikidata: c.wikidata, cc: c.cc }));
+  return [{ key: 'dest', name: trip.dest.name, wikidata: trip.dest.wikidata, cc: trip.dest.cc }];
+}
+
+async function maybeLoadSafety(ctx) {
+  const { trip } = ctx;
+  if (!navigator.onLine) return;
+  trip.safety ||= {};
+  const needs = s => !s || (!s.none && aiReady() && (!s.items || s.lang !== getLang()));
+  const todo = safetyPlaces(trip).filter(p => needs(trip.safety[p.key]));
+  if (!todo.length) return;
+  ctx.safetyLoading = true;
+  if (ctx.body.isConnected) ctx.rerender();
+  for (const p of todo) {
+    try {
+      const src = await staySafeFor(p);
+      if (!src) { trip.safety[p.key] = { place: p.name, none: true, at: Date.now() }; continue; }
+      const base = { place: p.name, title: src.title, scope: src.scope, url: src.url, at: Date.now() };
+      // Aynı kaynak (ör. iki şehir için aynı ülke sayfası) zaten özetlendiyse YZ'ye tekrar sorma
+      const same = Object.values(trip.safety).find(s => s.title === src.title && s.items && s.lang === getLang());
+      if (same) { trip.safety[p.key] = { ...same, place: p.name }; continue; }
+      if (aiReady()) {
+        try {
+          const r = await aiSafety(src.title, src.scope, src.text);
+          trip.safety[p.key] = { ...base, summary: String(r.summary || ''), items: (r.items || []).slice(0, 6), lang: getLang() };
+          continue;
+        } catch (e) { base.error = e.message; }
+      }
+      trip.safety[p.key] = { ...base, excerpt: src.text.slice(0, 700) };
+    } catch { /* bir sonraki açılışta yeniden denenir */ }
+  }
+  ctx.safetyLoading = false;
+  ctx.save();
+  if (ctx.body.isConnected) ctx.rerender();
+}
+
+function safetySection(ctx) {
+  const { trip } = ctx;
+  const seen = new Set(), cards = [];
+  for (const p of safetyPlaces(trip)) {
+    const s = trip.safety?.[p.key];
+    if (!s || s.none || seen.has(s.title)) continue;
+    seen.add(s.title);
+    cards.push(h('section', { class: 'card safety' },
+      h('h2', { class: 'h-sec' }, '🛡️ ' + t('Güvenlik · {p}', { p: s.scope === 'country' ? s.title : p.name })),
+      s.summary && h('p', {}, s.summary),
+      s.items?.length > 0 && h('div', { class: 'safety-list' }, s.items.map(i => h('div', { class: 'tip' },
+        h('span', { class: 'tip-icon', 'aria-hidden': 'true' }, SAFETY_ICON[i.topic] || '⚠️'),
+        h('div', {}, h('b', {}, i.title), h('p', {}, i.text))))),
+      s.excerpt && h('p', { class: 'small' }, s.excerpt + '…'),
+      s.excerpt && h('p', { class: 'muted small' }, s.error ? '⚠️ ' + s.error
+        : t('Metin İngilizce. YZ açıksa senin dilinde kısa maddeler halinde özetlenir (Ayarlar > Yapay zekâ).')),
+      s.scope === 'country' && h('p', { class: 'muted small' }, t('Bu yer için ayrı bilgi yok; ülke geneli için olanlar gösteriliyor.')),
+      h('p', { class: 'muted small' }, t('Kaynak: Wikivoyage ({x})', { x: s.title }) + (s.items ? ' · ' + t('YZ özeti') : '') + ' · ',
+        h('a', { href: s.url, target: '_blank', rel: 'noopener' }, t('Tamamını oku') + ' ↗'))));
+  }
+  if (!cards.length && ctx.safetyLoading) return h('section', { class: 'card' }, spinner(t('Güvenlik bilgileri hazırlanıyor…')));
+  return cards;
 }
 
 // Yurt dışı gezisinde ülke bilgisi alınamamışsa (servis o an yanıt vermediyse) yeniden dener.
@@ -130,10 +194,14 @@ function routeCard(trip) {
           : c.nights ? t('{n} {n:gece|gece}', { n: c.nights }) : t('Yol üstü uğrama'))),
       !ends && c.nights > 0 && linkBtn('🛏️ ' + t('Konaklama ara'), `https://www.google.com/maps/search/${encodeURIComponent(t('otel'))}/@${c.lat},${c.lon},13z`, 'btn small')));
   });
-  return h('section', { class: 'card route-card' },
-    h('div', { class: 'cost-head' },
-      h('div', {}, h('div', { class: 'muted small' }, t('Rota')), h('b', {}, t('{n} durak', { n: r.cities.length }))),
-      r.totalKm > 0 && h('div', { class: 'muted small' }, t('Toplam yol {km} · {d}', { km: fmtKm(r.totalKm), d: fmtDur(r.totalMin) }))),
+  // Şehir listesi gerektiğinde açılır; kapalıyken tek satır özet (plan yukarıda başlasın)
+  return h('details', { class: 'card route-card' },
+    h('summary', { class: 'ov-row' },
+      h('span', { class: 'ov-ico', 'aria-hidden': 'true' }, '🗺️'),
+      h('div', { class: 'ov-main' },
+        h('b', {}, t('Rota · {n} durak', { n: r.cities.length })),
+        r.totalKm > 0 && h('div', { class: 'muted small' }, t('Toplam yol {km} · {d}', { km: fmtKm(r.totalKm), d: fmtDur(r.totalMin) }))),
+      h('span', { class: 'chev', 'aria-hidden': 'true' }, '⌄')),
     r.reordered && h('p', { class: 'muted small' }, t('Duraklar en kısa yola göre yeniden sıralandı.')),
     h('div', { class: 'rt-list' }, rows),
     h('a', { class: 'cost-more small', href: `#/gezi/${trip.id}/harita` }, t('Rotayı haritada gör') + ' →'));
@@ -149,8 +217,8 @@ function renderPlanTab(body, ctx) {
     body.append(h('div', { class: 'note warn' }, t('Plana yer eklenemedi. Aşağıdaki listeden ekleyebilir ya da daha geniş bir alanla yeniden plan yapabilirsin.')));
   }
   ctx.budget = computeBudget(trip, ctx.settings);
+  body.append(overviewCard(ctx));
   if (trip.route) body.append(routeCard(trip));
-  body.append(costCard(ctx), guideCard(ctx));
   trip.days.forEach((_, di) => body.append(dayCard(ctx, di)));
   const alts = altSection(ctx);
   if (alts) body.append(alts);
@@ -159,19 +227,33 @@ function renderPlanTab(body, ctx) {
     h('button', { class: 'btn small danger-text', onclick: () => remove(ctx) }, '🗑️ ' + t('Geziyi sil'))));
 }
 
-// Planın başında: gezinin tahmini maliyeti ve kalemleri; dokununca Bütçe sekmesi açılır
-function costCard(ctx) {
+// Planın başında tek kart: maliyet, güvenlik ve YZ rehberi; her biri tek satır, ayrıntısı kendi sekmesinde.
+// (Plan, telefonda ilk ekranda başlasın diye kısa tutuldu.)
+function overviewCard(ctx) {
   const { trip, budget: b } = ctx;
   const parts = b.lines.filter(l => l.amount > 0).map(l => `${l.label} ${fmtMoney(l.amount)}`);
   if (b.buffer) parts.push(`${t('Beklenmedik giderler')} ${fmtMoney(b.buffer)}`);
   const open = b.lines.filter(l => !l.amount && !l.overridden).map(l => l.label); // otoyol, bilet, alışveriş gibi elle girilenler
-  return h('a', { class: 'card cost-card', href: `#/gezi/${trip.id}/butce` },
-    h('div', { class: 'cost-head' },
-      h('div', {}, h('div', { class: 'muted small' }, t('Tahmini maliyet')), h('div', { class: 'cost-total' }, fmtMoney(b.total))),
-      h('div', { class: 'muted small' }, t('kişi başı ~{p}', { p: fmtMoney(b.perPerson) }))),
-    parts.length > 0 && h('div', { class: 'cost-parts small' }, parts.join(' · ')),
-    open.length > 0 && h('div', { class: 'muted small' }, t('Henüz dahil değil: {x}', { x: open.join(', ') })),
-    h('div', { class: 'cost-more small' }, t('Bütçeyi gör ve düzenle') + ' →'));
+  const nSafety = Object.values(trip.safety || {}).reduce((s, x) => s + (x.items?.length || 0), 0);
+  const chev = h('span', { class: 'chev', 'aria-hidden': 'true' }, '›');
+  return h('section', { class: 'card overview' },
+    h('a', { class: 'ov-row', href: `#/gezi/${trip.id}/butce` },
+      h('span', { class: 'ov-ico', 'aria-hidden': 'true' }, '💰'),
+      h('div', { class: 'ov-main' },
+        h('div', { class: 'muted small' }, t('Tahmini maliyet')),
+        h('b', { class: 'ov-big' }, fmtMoney(b.total)), h('span', { class: 'muted small' }, '  ' + t('kişi başı ~{p}', { p: fmtMoney(b.perPerson) }))),
+      chev),
+    (parts.length > 0 || open.length > 0) && h('details', { class: 'ov-details small' },
+      h('summary', {}, t('Maliyet kalemleri')),
+      parts.length > 0 && h('p', {}, parts.join(' · ')),
+      open.length > 0 && h('p', { class: 'muted' }, t('Henüz dahil değil: {x}', { x: open.join(', ') }))),
+    h('a', { class: 'ov-row', href: `#/gezi/${trip.id}/bilgi` },
+      h('span', { class: 'ov-ico', 'aria-hidden': 'true' }, '🛡️'),
+      h('div', { class: 'ov-main' },
+        h('b', {}, t('Güvenlik ve dikkat edilecekler')),
+        h('div', { class: 'muted small' }, nSafety ? t('{n} güvenlik uyarısı · hava · ülke bilgisi', { n: nSafety }) : t('Kapkaç, dolandırıcılık, hava, ülke bilgisi'))),
+      chev.cloneNode(true)),
+    guideRow(ctx));
 }
 
 // ---- YZ gün rehberi ----
@@ -208,17 +290,19 @@ async function writeGuides(ctx, days, onProgress) {
   return err;
 }
 
-function guideCard(ctx) {
+function guideRow(ctx) {
   const { trip } = ctx;
   const has = trip.ai?.days?.some(Boolean);
-  if (!aiReady()) {
-    return h('section', { class: 'card ai-card' },
-      h('b', {}, '✨ ' + t('YZ gün rehberi')),
-      h('p', { class: 'muted small' }, t('Her gün için yerel bir rehber metni, denenecek yöresel lezzetler ve bir ipucu. Kullanmak için Ayarlar > Yapay zekâ bölümünü doldur.')),
-      h('a', { class: 'btn small', href: '#/ayarlar' }, t('Ayarlar') + ' →'));
-  }
-  const status = h('p', { class: 'muted small', 'aria-live': 'polite' });
-  const btn = h('button', { class: 'btn small' + (has ? '' : ' primary'), type: 'button', onclick: run }, has ? '↻ ' + t('Rehberi yeniden yaz') : '✨ ' + t('YZ gün rehberi yaz'));
+  const head = (sub, extra) => h('div', { class: 'ov-row' },
+    h('span', { class: 'ov-ico', 'aria-hidden': 'true' }, '✨'),
+    h('div', { class: 'ov-main' }, h('b', {}, t('YZ gün rehberi')), h('div', { class: 'muted small' }, sub)),
+    extra);
+  if (!aiReady()) return head(h('a', { href: '#/ayarlar' }, t('Ayarlar > Yapay zekâ bölümünden aç') + ' →'));
+  const status = h('span', { 'aria-live': 'polite' }, has
+    ? t('Her günün başında (📖). YZ yazdı; hata içerebilir.')
+    : t('Her gün için yerel rehber, yöresel lezzetler, ipucu'));
+  const btn = h('button', { class: 'btn small' + (has ? '' : ' primary'), type: 'button', onclick: run }, has ? '↻' : t('Yaz'));
+  if (has) btn.setAttribute('aria-label', t('Rehberi yeniden yaz'));
   async function run() {
     btn.disabled = true;
     status.textContent = t('YZ yazıyor…');
@@ -227,13 +311,7 @@ function guideCard(ctx) {
     if (err) toast(t('Bazı günler yazılamadı: {e}', { e: err.message }), 5000);
     if (ctx.body.isConnected) ctx.rerender();
   }
-  return h('section', { class: 'card ai-card' },
-    h('b', {}, '✨ ' + t('YZ gün rehberi')),
-    h('p', { class: 'muted small' }, has
-      ? t('Rehber metinleri her günün başında (📖). YZ tarafından yazıldı; yanlış bilgi içerebilir.')
-      : t('Her gün için yerel bir rehber metni, denenecek yöresel lezzetler ve bir ipucu yazdır. Yer, saat ve fiyat bilgileri yine gerçek veriden gelir.')),
-    h('div', { class: 'btn-row' }, btn),
-    status);
+  return head(status, btn);
 }
 
 function dayGuideBlock(ctx, di) {
@@ -595,6 +673,7 @@ function renderInfoTab(body, ctx) {
     // Rotadaki her şehrin kısa tanıtımı
     for (const c of trip.route.cities) if (c.info) body.append(wikiCard(c.info));
   } else if (trip.destInfo) body.append(wikiCard(trip.destInfo));
+  body.append(...[safetySection(ctx)].flat());
 
   if (trip.weather?.days) {
     const archive = trip.weather.source === 'archive';

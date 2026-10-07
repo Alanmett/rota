@@ -43,6 +43,7 @@ export const DEFAULT_SETTINGS = {
   budget: structuredClone(COUNTRY_PRESETS.ch.budget),
   aiCode: '',          // YZ sunucusunun erişim kodu (yalnızca bu cihazda; yedeğe yazılmaz)
   aiEndpoint: '',      // boşsa varsayılan Netlify adresi (ai.js)
+  lastBackup: 0,       // son yedek indirme zamanı (hatırlatma için)
 };
 
 function read(k, fb) { try { const v = localStorage.getItem(k); return v ? JSON.parse(v) : fb; } catch { return fb; } }

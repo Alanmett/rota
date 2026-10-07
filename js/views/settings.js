@@ -104,14 +104,7 @@ export function renderSettings(root) {
     section(t('Yedekleme'),
       h('p', { class: 'muted small' }, t('Gezilerin yalnızca bu cihazda saklanıyor. Telefon değiştirirken ya da tarayıcı verilerini silmeden önce yedek al.')),
       h('div', { class: 'btn-row' },
-        h('button', {
-          class: 'btn', onclick: () => {
-            const url = URL.createObjectURL(new Blob([exportData()], { type: 'application/json' }));
-            const a = h('a', { href: url, download: `rota-backup-${todayISO()}.json` });
-            document.body.append(a); a.click(); a.remove();
-            setTimeout(() => URL.revokeObjectURL(url), 1000);
-          },
-        }, '⬇️ ' + t('Yedeği indir')),
+        h('button', { class: 'btn', onclick: downloadBackup }, '⬇️ ' + t('Yedeği indir')),
         h('button', { class: 'btn', onclick: () => fileInput.click() }, '⬆️ ' + t('Yedekten yükle')),
         fileInput)),
     section(t('Hakkında'),
@@ -119,6 +112,15 @@ export function renderSettings(root) {
       h('p', { class: 'muted small' }, t('Hesap yok, takip yok. Konumun yalnızca arama yaparken bu servislere gönderilir; gezilerin ve ayarların cihazında kalır.')),
       h('p', { class: 'muted small' }, t("İsteğe bağlı YZ özellikleri Anthropic'in Claude modelini kullanır."))),
   );
+}
+
+// Yedek dosyasını indirir ve tarihini kaydeder (Gezilerim'deki hatırlatma için)
+export function downloadBackup() {
+  const url = URL.createObjectURL(new Blob([exportData()], { type: 'application/json' }));
+  const a = h('a', { href: url, download: `rota-backup-${todayISO()}.json` });
+  document.body.append(a); a.click(); a.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
+  const s = getSettings(); s.lastBackup = Date.now(); saveSettings(s);
 }
 
 // Yapay zekâ: erişim kodu (Netlify'da belirlenen parola), isteğe bağlı sunucu adresi ve bağlantı testi

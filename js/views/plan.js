@@ -257,7 +257,7 @@ function renderSingleForm(root) {
       end.input.min = form.startDate; updDur();
     },
   });
-  const submit = h('button', { class: 'btn primary wide', type: 'button', onclick: go }, t('Planı oluştur'));
+  const submit = h('button', { class: 'btn primary wide sticky-cta', type: 'button', onclick: go }, t('Planı oluştur'));
   staySec.append(section(t('Nerede kalacaksın?'), c.stayChips()));
 
   root.append(
@@ -397,7 +397,7 @@ function renderRouteForm(root) {
     staySec.hidden = nights === 0;
   };
   const start = dateField(form.startDate, { min: todayISO(), label: t('Gidiş'), onChange: v => { form.startDate = v || todayISO(); start.set(form.startDate); updDur(); } });
-  const submit = h('button', { class: 'btn primary wide', type: 'button', onclick: go }, '🗺️ ' + t('Rotayı oluştur'));
+  const submit = h('button', { class: 'btn primary wide sticky-cta', type: 'button', onclick: go }, '🗺️ ' + t('Rotayı oluştur'));
   staySec.append(section(t('Nerede kalacaksın?'), c.stayChips()));
 
   root.append(

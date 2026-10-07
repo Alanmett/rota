@@ -80,5 +80,10 @@ export function aiDayGuide(trip, di, ctx) {
   });
 }
 
+// Wikivoyage güvenlik metninin kısa özeti (yalnızca metindeki bilgiler)
+export function aiSafety(place, scope, text) {
+  return aiCall('safety', { lang: getLang(), place, scope, text: text.slice(0, 12000) });
+}
+
 // Rehber yazıldıktan sonra günün durakları değiştiyse metin eskimiştir
 export const guideSig = day => day.stops.join(',');
