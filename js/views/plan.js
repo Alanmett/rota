@@ -13,6 +13,7 @@ import { placeSearch } from '../components.js';
 import { createMap, numIcon, meIcon } from '../map.js';
 import { reverseGeocode, geocode, defaultRadiusFor } from '../api.js';
 import { aiReady, aiParseTrip } from '../ai.js';
+import { getPosition } from '../geo.js';
 import { todayISO, dateRange, parseISODate, toISODate, fmtDMY } from '../util.js';
 import { t } from '../i18n.js';
 
@@ -296,15 +297,12 @@ function renderSingleForm(root) {
   return null;
 }
 
-function locate(onPick) {
-  if (!('geolocation' in navigator)) return toast(t('Bu cihaz konum özelliğini desteklemiyor.'));
-  toast(t('Konum alınıyor…'));
-  navigator.geolocation.getCurrentPosition(async pos => {
-    const { latitude: lat, longitude: lon } = pos.coords;
-    let info = null;
-    try { info = await reverseGeocode(lat, lon, 10); } catch { /* adsız devam */ }
-    onPick({ ...(info || {}), lat, lon, name: info?.name || t('Bulunduğun yer'), label: info?.label || t('Bulunduğun yer'), kind: info?.kind || 'town' });
-  }, () => toast(t('Konum alınamadı; yeri yazarak arayabilirsin.')), { timeout: 15000, maximumAge: 300000 });
+async function locate(onPick) {
+  const pos = await getPosition();
+  if (!pos) return;
+  let info = null;
+  try { info = await reverseGeocode(pos.lat, pos.lon, 10); } catch { /* adsız devam */ }
+  onPick({ ...(info || {}), ...pos, name: info?.name || t('Bulunduğun yer'), label: info?.label || t('Bulunduğun yer'), kind: info?.kind || 'town' });
 }
 
 // ---- Rota ----

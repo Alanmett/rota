@@ -6,6 +6,7 @@ import { suggest, KINDS, COUNTRY_NAMES, flag } from '../suggest.js';
 import { getSettings, getPref, savePref } from '../store.js';
 import { prefillPlan, addToRoute } from './plan.js';
 import { mountToday } from '../today.js';
+import { getPosition } from '../geo.js';
 import { setNearLocation } from './near.js';
 import { placeSearch } from '../components.js';
 import { wikiMoreLabel } from '../details.js';
@@ -64,15 +65,12 @@ export function renderSuggest(root) {
     );
   }
   function setOrigin(o) { state.origin = o; state.results = null; persist(); renderOrigin(); results.replaceChildren(); }
-  function useGps() {
-    if (!('geolocation' in navigator)) return toast(t('Bu cihaz konum özelliğini desteklemiyor.'));
-    toast(t('Konum alınıyor…'));
-    navigator.geolocation.getCurrentPosition(async pos => {
-      const { latitude: lat, longitude: lon } = pos.coords;
-      let info = null;
-      try { info = await reverseGeocode(lat, lon, 12); } catch { /* adsız */ }
-      setOrigin({ lat, lon, label: info?.label || t('Bulunduğun yer'), src: 'gps' });
-    }, () => toast(t('Konum alınamadı; bir yer arayabilirsin.')), { timeout: 15000, maximumAge: 300000 });
+  async function useGps() {
+    const pos = await getPosition();
+    if (!pos) return;
+    let info = null;
+    try { info = await reverseGeocode(pos.lat, pos.lon, 12); } catch { /* adsız */ }
+    setOrigin({ ...pos, label: info?.label || t('Bulunduğun yer'), src: 'gps' });
   }
 
   function renderTime() {

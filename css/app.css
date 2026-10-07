@@ -383,6 +383,9 @@ summary.ov-row::-webkit-details-marker { display: none; }
 .exp-amount { font-size: 1.4rem; font-weight: 700; }
 .exp-form .chips { margin: 4px 0 10px; }
 
+.help-steps { margin: 8px 0 12px; padding-left: 22px; line-height: 1.5; }
+.help-steps li + li { margin-top: 8px; }
+
 /* Ana işlem düğmesi uzun formlarda ekranın altında hazır dursun */
 .sticky-cta { position: sticky; bottom: calc(var(--tabbar-h) + env(safe-area-inset-bottom) + 10px); z-index: 5; box-shadow: 0 6px 18px rgba(0, 0, 0, .18); }
 

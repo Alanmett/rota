@@ -11,6 +11,7 @@ import { placeSearch, placeCard } from '../components.js';
 import { createMap, emojiIcon, meIcon, popupFor } from '../map.js';
 import { todayISO, fmtClock, fmtDur } from '../util.js';
 import { t } from '../i18n.js';
+import { getPosition } from '../geo.js';
 
 // Mesafe kaydırıcısının durakları (km); kısa mesafelerde daha ince ayar
 const STOPS = [1, 2, 3, 5, 7, 10, 15, 20, 30, 40, 50, 75, 100, 150, 200];
@@ -87,18 +88,13 @@ export function renderNear(root) {
     try { state.weather = await weatherNow(state.loc.lat, state.loc.lon); if (locCard.isConnected) renderLoc(); } catch { /* hava olmadan devam */ }
   }
 
-  function useGps() {
-    if (!('geolocation' in navigator)) return toast(t('Bu cihaz konum özelliğini desteklemiyor.'));
+  async function useGps() {
     locCard.querySelector('.loc-name').textContent = t('Konum alınıyor…');
-    navigator.geolocation.getCurrentPosition(async pos => {
-      const { latitude: lat, longitude: lon } = pos.coords;
-      let info = null;
-      try { info = await reverseGeocode(lat, lon); } catch { /* adsız devam */ }
-      setLoc({ ...(info || {}), lat, lon, name: info?.name || t('Bulunduğun yer'), label: info?.label || t('Bulunduğun yer'), cc: info?.cc || '', gps: true });
-    }, err => {
-      renderLoc();
-      toast(err.code === 1 ? t('Konum izni verilmedi. Tarayıcı ayarlarından izin verebilir ya da yer arayabilirsin.') : t('Konum alınamadı. Bir yer arayarak devam edebilirsin.'), 4500);
-    }, { enableHighAccuracy: false, timeout: 15000, maximumAge: 300000 });
+    const pos = await getPosition();
+    if (!pos) { renderLoc(); return; }
+    let info = null;
+    try { info = await reverseGeocode(pos.lat, pos.lon); } catch { /* adsız devam */ }
+    setLoc({ ...(info || {}), ...pos, name: info?.name || t('Bulunduğun yer'), label: info?.label || t('Bulunduğun yer'), cc: info?.cc || '', gps: true });
   }
 
   async function search() {
