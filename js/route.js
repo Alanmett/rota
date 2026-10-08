@@ -9,6 +9,7 @@ import { fetchPlaces, stripPlace, isSight } from './places.js';
 import { buildItinerary, PACES } from './planner.js';
 import { drivingMatrix, drivingRoute, defaultRadiusFor, countryInfo, wikiForTags, wikiSearch } from './api.js';
 import { addFoodSuggestions, refreshWeather } from './tripgen.js';
+import { addLodging } from './lodging.js';
 import { saveTrip } from './store.js';
 import { haversineKm, parseISODate, toISODate, uid, sleep } from './util.js';
 import { t } from './i18n.js';
@@ -240,6 +241,7 @@ export async function generateRoute(f, settings, progress = () => {}) {
   const soft = (label, fn) => fn().catch(e => console.warn(label, e));
   const foreign = [...new Set(tripDays.map(d => d.cc).filter(cc => cc && cc !== settings.homeCountry))];
   await Promise.all([
+    soft('konaklama', () => addLodging(trip)),
     soft('yemek', () => addFoodSuggestions(trip)),
     soft('hava', () => refreshWeather(trip)),
     ...foreign.map(cc => soft('ülke', async () => { trip.countries[cc] = await countryInfo(cc); })),

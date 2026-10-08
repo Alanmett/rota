@@ -5,6 +5,7 @@ import { fetchPlaces, fetchFoodNear, fetchParkingNear, stripPlace, isSight } fro
 import { buildItinerary, computeTimeline, parkingStops } from './planner.js';
 import { weatherDaily, driveRoute, countryInfo, wikiForTags, wikiSearch } from './api.js';
 import { saveTrip } from './store.js';
+import { addLodging } from './lodging.js';
 import { dateRange, uid, sleep } from './util.js';
 import { t } from './i18n.js';
 
@@ -47,6 +48,7 @@ export async function generateTrip(f, settings, progress = () => {}) {
   progress(t('Yemek molaları, hava durumu ve yer bilgisi hazırlanıyor…'));
   const soft = (label, fn) => fn().catch(e => console.warn(label, e));
   await Promise.all([
+    soft('konaklama', () => addLodging(trip)), // tek günlük gezilerde hiçbir şey yapmaz
     soft('yemek', () => addFoodSuggestions(trip)),
     soft('otopark', () => addParking(trip)),
     soft('hava', () => refreshWeather(trip)),

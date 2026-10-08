@@ -17,7 +17,7 @@ import { createMap, numIcon, emojiIcon, meIcon, popupFor, DAY_COLORS } from '../
 import { WX, exchangeRate, countryInfo, staySafeFor } from '../api.js';
 import { aiReady, aiDayGuide, aiSafety, guideSig } from '../ai.js';
 import { fmtDur, fmtKm, fmtClock, fmtMoney, fmtNum, fmtDay, fmtDayLong, fmtRange, todayISO, currencySymbol, safeUrl } from '../util.js';
-import { fetchLodging, bookingUrl, LODGING_TYPES } from '../lodging.js';
+import { addLodging, lodgingTargets, bookingUrl, LODGING_TYPES } from '../lodging.js';
 import { t, getLang, locale } from '../i18n.js';
 
 const TABS = [['plan', t('Plan')], ['harita', t('Harita')], ['butce', t('Bütçe')], ['hazirlik', t('Hazırlık')], ['bilgi', t('Bilgiler')]];
@@ -39,7 +39,7 @@ export function renderTrip(root, id, tab) {
     save() { trip.updatedAt = Date.now(); saveTrip(trip); },
     rerender() {
       const y = window.scrollY; body.replaceChildren(); render(body, ctx); window.scrollTo(0, y);
-      if (tab === 'plan') { maybeAddParking(ctx); maybeAddLodging(ctx); }
+      if (tab === 'plan') { maybeAddLodging(ctx); maybeAddParking(ctx); }
     },
   };
   root.append(
@@ -57,8 +57,9 @@ export function renderTrip(root, id, tab) {
     }, 0);
   }
   if (tab !== 'harita') maybeRefreshWeather(ctx);
-  if (tab === 'plan' || tab === 'harita') maybeAddParking(ctx, tab === 'plan');
+  // Önce konaklama (birkaç istek), sonra otoparklar (durak başına bir istek); servis istekleri sırayla işler
   if (tab === 'plan') maybeAddLodging(ctx);
+  if (tab === 'plan' || tab === 'harita') maybeAddParking(ctx, tab === 'plan');
   if (tab === 'bilgi') { maybeAddCountry(ctx); maybeLoadSafety(ctx); }
 }
 
@@ -148,42 +149,23 @@ async function maybeAddCountry(ctx) {
 }
 
 // ---- Konaklama önerileri ----
-// Gecelenecek her yer için: o günlerde gezilecek yerlerin ortası, giriş/çıkış tarihleri
-function lodgingTargets(trip) {
-  const stay = stayOf(trip);
-  if (stay === 'yok') return [];
-  const mid = pts => (pts.length ? { lat: pts.reduce((s, p) => s + p.lat, 0) / pts.length, lon: pts.reduce((s, p) => s + p.lon, 0) / pts.length } : null);
-  const next = iso => { const d = new Date(iso + 'T12:00'); d.setDate(d.getDate() + 1); return d.toISOString().slice(0, 10); };
-  if (!trip.route) {
-    if (trip.days.length < 2) return [];
-    const stops = trip.days.flatMap(d => d.stops.map(id => trip.places[id])).filter(Boolean);
-    return [{ key: 'dest', name: trip.dest.name, center: mid(stops) || trip.dest, checkin: trip.startDate, checkout: trip.endDate }];
-  }
-  const out = [];
-  for (const d of trip.days) {
-    if (!d.sleep) continue;
-    const last = out[out.length - 1];
-    if (last && last.key === d.sleep.city) { last.checkout = next(d.date); continue; } // aynı şehirde art arda geceler
-    const stops = Object.values(trip.places).filter(p => p.city === d.sleep.city && trip.days.some(x => x.stops.includes(p.id)));
-    out.push({ key: d.sleep.city, name: d.sleep.name, center: mid(stops) || d.sleep, checkin: d.date, checkout: next(d.date), firstDate: d.date });
-  }
-  return out;
-}
-
+// (Gezi oluşturulurken hazırlanır; eski gezilerde ya da konaklama türü değişince burada aranır.)
 async function maybeAddLodging(ctx) {
-  const { trip } = ctx;
   if (ctx.lodgingBusy || !navigator.onLine) return;
-  const stay = stayOf(trip);
-  const todo = lodgingTargets(trip).filter(x => trip.lodging?.[x.key]?.stay !== stay);
-  if (!todo.length) return;
   ctx.lodgingBusy = true;
-  trip.lodging ||= {};
-  let changed = false;
-  for (const x of todo) {
-    try { trip.lodging[x.key] = { stay, list: await fetchLodging(x.center, stay) }; changed = true; } catch { /* sonra yeniden denenir */ }
-  }
+  const changed = await addLodging(ctx.trip);
   ctx.lodgingBusy = false;
   if (changed) { ctx.save(); if (ctx.body.isConnected) ctx.rerender(); }
+}
+
+// Rotadaki tüm şehirlerin önerileri tek pencerede
+function lodgingAllSheet(trip) {
+  openSheet(h('div', {},
+    h('h2', { class: 'sheet-title' }, '🛏️ ' + t('Nerede kalınır?')),
+    h('p', { class: 'muted small' }, t('{s} · gezeceğin yerlere yakın', { s: STAYS[stayOf(trip)].label })),
+    lodgingTargets(trip).map(x => h('section', { class: 'lodging-city' },
+      h('h3', { class: 'h-sec' }, `${x.name} · ${fmtRange(x.checkin, x.checkout)}`),
+      lodgingOptions(trip, x)))));
 }
 
 const starsText = n => (n ? ' ' + '★'.repeat(n) : '');
@@ -332,6 +314,7 @@ function routeCard(trip) {
   const r = trip.route;
   const seq = [r.start && { ...r.start, key: 's' }, ...r.cities, r.end && { ...r.end, key: 'e' }].filter(Boolean);
   const road = (a, b) => r.roads?.[`${a.key}>${b.key}`];
+  const targets = lodgingTargets(trip);
   const rows = [];
   seq.forEach((c, i) => {
     if (i > 0) {
@@ -339,13 +322,14 @@ function routeCard(trip) {
       if (rd) rows.push(h('div', { class: 'rt-leg muted small' }, `${trip.transport === 'araba' ? '🚗' : '🚆'} ${fmtDur(rd.min)} · ${fmtKm(rd.km)}`));
     }
     const ends = c.key === 's' || c.key === 'e';
+    const lt = !ends && c.nights > 0 ? targets.find(x => x.key === c.key) : null;
     rows.push(h('div', { class: 'rt-city' },
       h('span', { class: 'rt-dot' + (ends ? ' end' : ''), 'aria-hidden': 'true' }, ends ? '🏁' : String(+c.key + 1)),
       h('div', { class: 'rt-main' },
         h('b', {}, c.name),
         h('div', { class: 'muted small' }, ends ? (c.key === 's' ? t('Başlangıç') : t('Dönüş'))
-          : c.nights ? t('{n} {n:gece|gece}', { n: c.nights }) : t('Yol üstü uğrama'))),
-      !ends && c.nights > 0 && linkBtn('🛏️ ' + t('Konaklama ara'), `https://www.google.com/maps/search/${encodeURIComponent(t('otel'))}/@${c.lat},${c.lon},13z`, 'btn small')));
+          : c.nights ? t('{n} {n:gece|gece}', { n: c.nights }) : t('Yol üstü uğrama')),
+        lt && lodgingOptions(trip, lt))));
   });
   // Şehir listesi gerektiğinde açılır; kapalıyken tek satır özet (plan yukarıda başlasın)
   return h('details', { class: 'card route-card' },
@@ -407,6 +391,11 @@ function overviewCard(ctx) {
       h('div', { class: 'ov-main' },
         h('b', {}, t('Güvenlik ve dikkat edilecekler')),
         h('div', { class: 'muted small' }, nSafety ? t('{n} güvenlik uyarısı · hava · ülke bilgisi', { n: nSafety }) : t('Kapkaç, dolandırıcılık, hava, ülke bilgisi'))),
+      chev.cloneNode(true)),
+    trip.route && lodgingTargets(trip).length > 0 && h('button', { class: 'ov-row ov-btn', type: 'button', onclick: () => lodgingAllSheet(trip) },
+      h('span', { class: 'ov-ico', 'aria-hidden': 'true' }, '🛏️'),
+      h('div', { class: 'ov-main' }, h('b', {}, t('Nerede kalınır?')),
+        h('div', { class: 'muted small' }, lodgingTargets(trip).map(x => x.name).join(', '))),
       chev.cloneNode(true)),
     h('a', { class: 'ov-row', href: `#/gezi/${trip.id}/hazirlik` },
       h('span', { class: 'ov-ico', 'aria-hidden': 'true' }, '🧳'),

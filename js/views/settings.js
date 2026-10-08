@@ -110,8 +110,19 @@ export function renderSettings(root) {
     section(t('Hakkında'),
       h('p', { class: 'small' }, t("Rota, ücretsiz ve açık veri kaynaklarıyla çalışır: mekânlar OpenStreetMap ve Wikidata'dan, açıklamalar Wikipedia'dan, hava durumu Open-Meteo'dan, yol mesafesi OSRM'den, tren süreleri İsviçre'nin açık tarife verisinden gelir.")),
       h('p', { class: 'muted small' }, t('Hesap yok, takip yok. Konumun yalnızca arama yaparken bu servislere gönderilir; gezilerin ve ayarların cihazında kalır.')),
-      h('p', { class: 'muted small' }, t("İsteğe bağlı YZ özellikleri Anthropic'in Claude modelini kullanır."))),
+      h('p', { class: 'muted small' }, t("İsteğe bağlı YZ özellikleri Anthropic'in Claude modelini kullanır.")),
+      versionLine()),
   );
+}
+
+// Telefonda hangi sürümün açık olduğu (sorun ararken işe yarar): service worker dosyasındaki sürüm
+function versionLine() {
+  const el = h('p', { class: 'muted small' });
+  fetch('sw.js', { cache: 'no-store' }).then(r => r.text()).then(src => {
+    const v = src.match(/rota-v(\d+)/)?.[1];
+    if (v && el.isConnected) el.textContent = t('Sürüm {v}', { v });
+  }).catch(() => {});
+  return el;
 }
 
 // Yedek dosyasını indirir ve tarihini kaydeder (Gezilerim'deki hatırlatma için)

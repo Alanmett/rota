@@ -383,6 +383,9 @@ summary.ov-row::-webkit-details-marker { display: none; }
 .exp-amount { font-size: 1.4rem; font-weight: 700; }
 .exp-form .chips { margin: 4px 0 10px; }
 
+.ov-btn { width: 100%; background: none; border: 0; border-bottom: 1px solid var(--line); border-radius: 0; font: inherit; text-align: left; cursor: pointer; }
+.lodging-city + .lodging-city { margin-top: 14px; }
+.rt-main .lodging-opts { margin-top: 6px; }
 .lodging-card { margin-bottom: 14px; }
 .lodging-card p { margin: 0 0 8px; }
 .lodging-opts .btn-row { margin-top: 8px; }
