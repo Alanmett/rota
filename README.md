@@ -26,6 +26,11 @@ Kurulum:
 3. Netlify → Site configuration → Environment variables: `ANTHROPIC_API_KEY` (anahtar) ve `ROTA_ACCESS_CODE` (kendi belirlediğin parola). İsteğe bağlı `AI_MODEL` (varsayılan `claude-haiku-4-5-20251001`). Sonra Deploys → Trigger deploy.
 4. Uygulamada Ayarlar > Yapay zekâ > Erişim kodu → aynı parola → "Bağlantıyı dene".
 
+Netlify kredileri: ücretsiz planda ayda 300 kredi var ve her production deploy 15 kredi. Kredi biterse Netlify siteyi
+(dolayısıyla YZ'yi) dönemin sonuna kadar durdurur. Bu yüzden `netlify.toml` içindeki `ignore` komutu Netlify'ın yalnızca
+`netlify/` klasörü ya da `netlify.toml` değişince derlemesini sağlar; uygulamadaki değişiklikler (GitHub Pages) kredi harcamaz.
+YZ sunucusunda değişiklik gerekiyorsa birkaçını tek seferde göndermek kredi tasarrufu sağlar.
+
 ## Çeviriler
 
 Kaynak dil Türkçe: koddaki metinler `t('Türkçe metin')` ile yazılır, çevirileri `js/i18n/en.js` ve `js/i18n/fr.js` içindedir. Tekil/çoğul için: `"{n} {n:night|nights}"`. Yeni metin ekledikten sonra eksik çevirileri bulmak için:
