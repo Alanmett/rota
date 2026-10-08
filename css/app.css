@@ -383,6 +383,10 @@ summary.ov-row::-webkit-details-marker { display: none; }
 .exp-amount { font-size: 1.4rem; font-weight: 700; }
 .exp-form .chips { margin: 4px 0 10px; }
 
+.lodging-card { margin-bottom: 14px; }
+.lodging-card p { margin: 0 0 8px; }
+.lodging-opts .btn-row { margin-top: 8px; }
+.tl-body .lodging-opts { margin-top: 6px; }
 .help-steps { margin: 8px 0 12px; padding-left: 22px; line-height: 1.5; }
 .help-steps li + li { margin-top: 8px; }
 
