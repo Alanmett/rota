@@ -1,8 +1,12 @@
-# Netlify: uygulamanın bir kopyasını yayınlar ve YZ ara sunucusunu (netlify/functions/ai.mjs) çalıştırır.
+# Netlify: YZ ara sunucusunu (netlify/functions/ai.mjs) çalıştırır. Uygulamanın kendisi GitHub Pages'ten yayınlanır.
 # Derleme adımı yok; dosyalar olduğu gibi yayınlanır.
 [build]
   publish = "."
   command = ""
+  # Netlify'ın ücretsiz planında her yayın 15 kredi (ayda 300). Uygulama GitHub Pages'te olduğu için Netlify
+  # yalnızca YZ sunucusu (netlify/ klasörü) ya da bu dosya değişince yeniden yayınlasın; diğer değişikliklerde
+  # derleme iptal edilir ve kredi harcanmaz. (Komut 0 ile biterse Netlify derlemeyi atlar.)
+  ignore = "git diff --quiet $CACHED_COMMIT_REF $COMMIT_REF -- netlify/ netlify.toml"
 
 [functions]
   directory = "netlify/functions"
