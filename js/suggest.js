@@ -1,10 +1,11 @@
 // "Nereye gidelim?": uygulamayla gelen veri setinden (data/destinations.json, tools/build-destinations.ps1 üretir)
 // yol süresine göre gidilecek yer önerir. Önce kuş uçuşu mesafeyle kaba eleme, sonra gerçek süre:
-// araba → OSRM, tren → transport.opendata.ch (İsviçre'den kalkışlarda gerçek tarife).
+// araba → OSRM, tren → transport.opendata.ch (İsviçre'den kalkışlarda gerçek tarife), uçak → havalimanı verisinden tahmin (flights.js).
 
 import { haversineKm } from './util.js';
 import { t, locale, getLang } from './i18n.js';
 import { wikidataLabels } from './api.js';
+import { flightFinder } from './flights.js';
 
 export const KINDS = {
   s: { label: t('Şehir & kasaba'), emoji: '🏘️' },
@@ -104,8 +105,11 @@ async function trainTimes(origin, list) {
 }
 
 export async function suggest({ origin, minH, maxH, mode, countries, kinds, limit = 24 }, progress = () => {}) {
-  progress(t('Gidilecek yerler taranıyor…'));
+  progress(mode === 'ucak' ? t('Havalimanları taranıyor…') : t('Gidilecek yerler taranıyor…'));
   const all = await loadDestinations();
+  // Uçak: süre havalimanı verisinden yerelde hesaplanır; çıkış yerinin yakınında havalimanı yoksa öneri çıkmaz
+  const air = mode === 'ucak' ? await flightFinder(origin) : null;
+  if (air && !air.from.length) return { results: [], scanned: 0, noAirport: true };
   const cset = countries?.length ? new Set(countries) : null;
   const kset = new Set(kinds);
   const cands = [];
@@ -114,6 +118,11 @@ export async function suggest({ origin, minH, maxH, mode, countries, kinds, limi
     if (!kset.has(d.kind)) continue;
     const km = haversineKm(origin, d);
     if (km < 3) continue; // bulunduğun yerin kendisi
+    if (air) {
+      const f = air.best(d);
+      if (f && f.hours >= minH && f.hours <= maxH) cands.push({ ...d, km, est: f.hours, hours: f.hours, flight: f, s: worth(d) });
+      continue;
+    }
     const est = estimateHours(km, mode);
     if (est < minH * 0.6 || est > maxH * 1.4) continue;
     cands.push({ ...d, km, est, s: worth(d) });
@@ -129,15 +138,18 @@ export async function suggest({ origin, minH, maxH, mode, countries, kinds, limi
     if (picked.length >= (mode === 'tren' ? 40 : 80)) break;
   }
 
-  progress(mode === 'tren' ? t('Tren bağlantıları aranıyor…') : t('Yol süreleri hesaplanıyor…'));
   // Tren: önce tahmini süresi aralığa en yakın, en önemli adaylar sorulur
   if (mode === 'tren') {
+    progress(t('Tren bağlantıları aranıyor…'));
     const mid = (minH + maxH) / 2;
     const likely = picked.filter(p => p.est >= minH * 0.7 && p.est <= maxH * 1.3)
       .sort((a, b) => (b.s - Math.abs(b.est - mid)) - (a.s - Math.abs(a.est - mid)));
     await trainTimes(origin, likely.slice(0, 30));
   }
-  else await carTimes(origin, picked);
+  else if (mode === 'araba') {
+    progress(t('Yol süreleri hesaplanıyor…'));
+    await carTimes(origin, picked);
+  }
 
   const ok = picked.filter(p => {
     if (p.unreachable) return false;
@@ -150,11 +162,16 @@ export async function suggest({ origin, minH, maxH, mode, countries, kinds, limi
   // Veri setindeki adlar Türkçe; başka dilde gösterilen sonuçların adı o dilde çekilir (internet yoksa Türkçe kalır)
   if (getLang() !== 'tr' && results.length) {
     const all = [...results, ...results.flatMap(r => r.nearby || [])];
+    const ports = [...new Set(results.flatMap(r => (r.flight ? [r.flight.from, r.flight.to] : [])))];
     try {
-      const labels = await wikidataLabels(all.map(x => x.q));
+      const labels = await wikidataLabels([...all, ...ports].map(x => x.q));
       for (const x of all) {
         const l = labels.get(x.q)?.label;
         if (l && !/^Q\d+$/.test(l)) x.name = l.split(/\s*[,(]/)[0].trim() || l;
+      }
+      for (const a of ports) {
+        const l = labels.get(a.q)?.label;
+        if (l && !/^Q\d+$/.test(l)) a.name = l;
       }
     } catch { /* Türkçe adlarla devam */ }
   }

@@ -887,4 +887,12 @@ export default {
   "Nerede kalınır?": "Où dormir ?",
   "{s} · gezeceğin yerlere yakın": "{s} · près de vos visites",
   "Sürüm {v}": "Version {v}",
+  "Uçak": "Avion",
+  "Havalimanları taranıyor…": "Recherche des aéroports…",
+  "Çıkış yerinin 160 km çevresinde verideki havalimanlarından hiçbiri yok (İsviçre ve komşuları, Türkiye ve Avrupa'nın büyük kısmı kapsanıyor). Başka bir çıkış yeri seçmeyi dene.": "Aucun des aéroports des données de l'appli ne se trouve à moins de 160 km de votre point de départ (couverture : la Suisse et ses voisins, la Turquie et la majeure partie de l'Europe). Essayez un autre point de départ.",
+  "Uçakla kapıdan kapıya yolculuk, havalimanı yolu ve bekleme dahil genelde 4 saatin altına inmez; daha uzun bir süre aralığı seç.": "En avion, porte à porte (trajet jusqu'à l'aéroport et attente compris), il faut rarement moins de 4 heures ; choisissez une plage plus longue.",
+  "Uçak süreleri tahmindir: havalimanına yol, giriş işlemleri, uçuş ve varıştan sonraki yol dahil. Direkt uçuş olup olmadığını uçuş sitesinden kontrol et.": "Les durées en avion sont des estimations : trajet jusqu'à l'aéroport, enregistrement, vol et trajet après l'atterrissage compris. Vérifiez sur un site de vols s'il existe un vol direct.",
+  "{a} → {b} · uçuşun kendisi yaklaşık {f}": "{a} → {b} · le vol en lui-même dure environ {f}",
+  "Direkt uçuş olup olmadığını ve fiyatı uçuş sitesinden kontrol et.": "Vérifiez sur un site de vols s'il existe un vol direct et son prix.",
+  "Uçuşlara bak": "Voir les vols",
 };

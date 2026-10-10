@@ -2,7 +2,7 @@
 
 Telefonda uygulama gibi çalışan (PWA) gezi planlayıcı. Günübirlik ve uzun geziler için:
 
-- **Öner ("Nereye gidelim?"):** Nereden çıkacağın, ne kadar yol göze aldığın ("3–4 saat"), araba ya da tren, ülke ve yer türüne göre gidilecek yer önerir. Araba süreleri OSRM'den, tren süreleri İsviçre tarifesinden (transport.opendata.ch) gerçek değerlerdir.
+- **Öner ("Nereye gidelim?"):** Nereden çıkacağın, ne kadar yol göze aldığın ("3–4 saat"), araba, tren ya da uçak, ülke ve yer türüne göre gidilecek yer önerir. Araba süreleri OSRM'den, tren süreleri İsviçre tarifesinden (transport.opendata.ch) gerçek değerlerdir. **Uçak** süreleri tahmindir (ücretsiz tarife verisi yok): havalimanına yol + giriş işlemleri + uçuş + bagaj/çıkış + varış yolu toplanır; yılda en az 1 milyon yolcusu olan en yakın havalimanlarından, en az 0,7 milyon yolculu varış havalimanlarına, en az 400 km'lik uçuşlar hesaplanır ve en az bir ucu büyük (3 milyon+) havalimanı olmalıdır. Direkt uçuş garantisi yoktur; her yerin ayrıntısındaki "Uçuşlara bak" Google Uçuşlar'da aynı havalimanı çiftini açar.
 - **Keşfet:** Bulunduğun yerin ya da seçtiğin bir yerin çevresindeki tarihi, doğal ve görülecek yerler; tek dokunuşla "bugün için plan". "Az bilinenler" seçeneği kalabalık turistik yerler yerine gözden kaçan yerleri öne çıkarır.
 - **Rota (Planla → Birkaç yer):** Görmek istediğin şehirleri haritaya dokunarak ya da arayarak işaretle, her birine gece sayısı ver (0 = yol üstü uğrama). Uygulama en kısa sırayı ve gerçek yol rotasını (OSRM) bulur, geceleri günlere dağıtır, her şehir için gün gün plan, yemek, otopark, hava, bütçe (her günün ülkesine göre) ve uyarılar çıkarır. Öner sekmesindeki yerler "Rotaya ekle" ile eklenebilir.
 - **Şarap & bira:** Bağlar, şaraphaneler, şampanya evleri, manastır ve tarihi bira üreticileri, damıtımevleri (Wikidata + OSM, tüm ülkeler). Planlarda günde en fazla iki tadım durağı; randevu, alkol-araç ve gümrük uyarıları.
@@ -49,6 +49,7 @@ powershell -ExecutionPolicy Bypass -File tools/i18n-check.ps1
 | Açıklama ve fotoğraf | Wikipedia |
 | Hava | Open-Meteo |
 | Yol mesafesi | OSRM |
+| Havalimanları (uçak seçeneği) | Wikidata (IATA kodu, yıllık yolcu sayısı) |
 | Ülke bilgisi (başkent, dil, trafik yönü) | Wikidata + tarayıcının kendi çevirileri |
 | Döviz kuru | frankfurter.dev (Avrupa Merkez Bankası) |
 
@@ -72,6 +73,14 @@ powershell -ExecutionPolicy Bypass -File tools/build-destinations.ps1
 
 Önem sıralaması: kaç dilde gezi rehberi maddesi var, kaç dilde Wikipedia maddesi var, UNESCO mirası mı. Canlı sorgu yerine hazır veri seti kullanılmasının nedeni ölçümdür: aynı sorgu canlı yapıldığında 250 km yarıçap için ~25 sn sürüyordu; hazır veriyle öneriler anında ve internetsiz çalışıyor.
 
+## Havalimanı veri seti
+
+`data/airports.json` (yaklaşık 300 havalimanı, aynı 23 ülke) yılda en az 100 bin yolcusu bilinen, IATA kodlu havalimanlarını içerir; `tools/build-airports.ps1` ile Wikidata'dan üretilir. Süre hesabı `js/flights.js` içindedir.
+
+```
+powershell -ExecutionPolicy Bypass -File tools/build-airports.ps1
+```
+
 ## Bilgisayarda çalıştırma
 
 ```
@@ -83,6 +92,7 @@ Sonra tarayıcıda http://localhost:8080 adresini aç.
 ## Dosyalar
 
 - `js/places.js`: Mekân türleri, sorgular, puanlama, birleştirme
+- `js/flights.js`: Uçak seçeneği: havalimanı seçimi ve kapıdan kapıya süre tahmini
 - `js/planner.js`: Gün gün plan algoritması, zaman çizelgesi
 - `js/tips.js`: "Dikkat edilecekler" kuralları
 - `js/budget.js`: Bütçe hesabı

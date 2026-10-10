@@ -887,4 +887,12 @@ export default {
   "Nerede kalınır?": "Where to stay?",
   "{s} · gezeceğin yerlere yakın": "{s} · close to your sights",
   "Sürüm {v}": "Version {v}",
+  "Uçak": "Plane",
+  "Havalimanları taranıyor…": "Checking airports…",
+  "Çıkış yerinin 160 km çevresinde verideki havalimanlarından hiçbiri yok (İsviçre ve komşuları, Türkiye ve Avrupa'nın büyük kısmı kapsanıyor). Başka bir çıkış yeri seçmeyi dene.": "None of the airports in the app's data are within 160 km of your starting point (covered: Switzerland and its neighbours, Turkey and most of Europe). Try a different starting point.",
+  "Uçakla kapıdan kapıya yolculuk, havalimanı yolu ve bekleme dahil genelde 4 saatin altına inmez; daha uzun bir süre aralığı seç.": "Door to door by plane, including the trip to the airport and waiting, rarely takes under 4 hours; pick a longer range.",
+  "Uçak süreleri tahmindir: havalimanına yol, giriş işlemleri, uçuş ve varıştan sonraki yol dahil. Direkt uçuş olup olmadığını uçuş sitesinden kontrol et.": "Flight times are estimates: they include getting to the airport, check-in, the flight and the trip after landing. Check on a flight site whether a direct flight exists.",
+  "{a} → {b} · uçuşun kendisi yaklaşık {f}": "{a} → {b} · the flight itself takes about {f}",
+  "Direkt uçuş olup olmadığını ve fiyatı uçuş sitesinden kontrol et.": "Check on a flight site whether there is a direct flight and what it costs.",
+  "Uçuşlara bak": "See flights",
 };
