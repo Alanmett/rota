@@ -140,6 +140,10 @@ main { max-width: 680px; margin: 0 auto; padding: 16px 16px calc(var(--tabbar-h)
   background: transparent; color: var(--muted); font-weight: 600; font-size: .88rem; line-height: 1.15; cursor: pointer;
 }
 .seg button small { font-weight: 500; font-size: .7rem; opacity: .85; }
+/* 5 seçenek tek satıra sığmaz: üstte 3, altta 2 düğme */
+.seg:has(> button:nth-child(5)) { grid-auto-flow: row; grid-template-columns: repeat(6, 1fr); }
+.seg:has(> button:nth-child(5)) > button { grid-column: span 2; }
+.seg:has(> button:nth-child(5)) > button:nth-child(n+4) { grid-column: span 3; }
 .seg button.on { background: var(--surface); color: var(--primary); box-shadow: 0 1px 3px rgb(0 0 0 / .12); }
 
 .chips { display: flex; flex-wrap: wrap; gap: 8px; }
@@ -426,6 +430,7 @@ summary.ov-row::-webkit-details-marker { display: none; }
 .rt-arrows { margin-left: auto; display: flex; gap: 4px; }
 .tl-leg.road .txt { font-weight: 650; color: var(--text); }
 .day-note { margin: 0 16px 8px; }
+.bike-note ul { margin: 8px 0 0; padding: 0; list-style: none; display: grid; gap: 8px; }
 .budget-row { display: flex; justify-content: space-between; align-items: center; gap: 12px; padding: 12px 0; border-bottom: 1px solid var(--line); }
 .budget-row:last-child { border-bottom: 0; }
 .bl-label { font-weight: 650; }

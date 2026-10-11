@@ -4,6 +4,7 @@
 import { fmtMoney } from './util.js';
 import { isPaid, isShop, MUZEKART_TYPES } from './places.js';
 import { computeTimeline } from './planner.js';
+import { isBike } from './bike.js';
 import { t } from './i18n.js';
 
 // Yemek düzeni (gezide trip.level olarak saklanır)
@@ -105,6 +106,9 @@ export function computeBudget(trip, settings) {
     const park = fd.map(x => unit(b.parkingPerDay * x));
     add('parking', t('Otopark'), sum(park),
       t('{d} gün × {p}', { d: days, p: unitText(park) }) + t(' · şehre göre çok değişir, gerekirse düzenle'), share(park));
+  } else if (isBike(trip.transport)) {
+    // Yakıt, otopark ve toplu taşıma yok; bisiklet kiralanacaksa tutarı kullanıcı girer
+    add('bike', t('Bisiklet (kiralama, bakım)'), 0, t('Kendi bisikletinle gidiyorsan 0; kiralayacaksan tutarı gir'));
   } else {
     if (trip.kind !== 'today') add('intercity', t('Şehirlerarası bilet (tren, otobüs, uçak)'), 0, t('Bilet fiyatını elle gir'),
       trip.route ? share(trip.days.map(d => d.drive || 0)) : ends(days));

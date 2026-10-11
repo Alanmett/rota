@@ -374,16 +374,29 @@ export async function driveRoute(a, b) {
 
 const osrmCoords = pts => pts.map(p => `${p.lon.toFixed(5)},${p.lat.toFixed(5)}`).join(';');
 
+// 'car': OSRM'nin genel sunucusu. 'bike': OpenStreetMap Almanya'nın bisiklet profilli sunucusu (otoyolu atlar, bisiklet yollarını kullanır).
+const OSRM = { car: 'https://router.project-osrm.org', bike: 'https://routing.openstreetmap.de/routed-bike' };
+
 // Noktalar arası tüm yol süreleri (dk) ve mesafeleri (km): rota sıralaması için
-export async function drivingMatrix(pts) {
-  const r = await fetchJSON(`https://router.project-osrm.org/table/v1/driving/${osrmCoords(pts)}?annotations=duration,distance`, {}, 20000);
+export async function drivingMatrix(pts, profile = 'car') {
+  const r = await fetchJSON(`${OSRM[profile]}/table/v1/driving/${osrmCoords(pts)}?annotations=duration,distance`, {}, 20000);
   if (r.code !== 'Ok') throw new Error('osrm');
   return { min: r.durations.map(row => row.map(s => (s == null ? null : s / 60))), km: r.distances.map(row => row.map(m => (m == null ? null : m / 1000))) };
 }
 
+// Yükseklik (m): Open-Meteo, anahtarsız, tek istekte en çok 100 nokta. Alınamazsa null (yokuş hesaba katılmaz).
+export async function elevations(pts) {
+  if (!pts.length || pts.length > 100) return null;
+  try {
+    const q = k => pts.map(p => p[k].toFixed(4)).join(',');
+    const r = await fetchJSON(`https://api.open-meteo.com/v1/elevation?latitude=${q('lat')}&longitude=${q('lon')}`, {}, 8000);
+    return Array.isArray(r.elevation) && r.elevation.length === pts.length && r.elevation.every(x => typeof x === 'number') ? r.elevation : null;
+  } catch { return null; }
+}
+
 // Sıralı noktalardan geçen gerçek yol: her bacağın süresi/mesafesi ve haritada çizmek için sadeleştirilmiş çizgi
-export async function drivingRoute(pts) {
-  const r = await fetchJSON(`https://router.project-osrm.org/route/v1/driving/${osrmCoords(pts)}?overview=simplified&geometries=geojson`, {}, 25000);
+export async function drivingRoute(pts, profile = 'car') {
+  const r = await fetchJSON(`${OSRM[profile]}/route/v1/driving/${osrmCoords(pts)}?overview=simplified&geometries=geojson`, {}, 25000);
   const rt = r.routes?.[0];
   if (!rt) throw new Error('osrm');
   return {

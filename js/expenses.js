@@ -12,7 +12,7 @@ import { t, locale } from './i18n.js';
 export const EXP_CATS = {
   food: { label: t('Yeme-içme'), emoji: '🍽️', lines: ['food'] },
   hotel: { label: t('Konaklama'), emoji: '🛏️', lines: ['hotel'] },
-  transport: { label: t('Ulaşım'), emoji: '🚗', lines: ['fuel', 'toll', 'parking', 'transit', 'intercity'] },
+  transport: { label: t('Ulaşım'), emoji: '🚗', lines: ['fuel', 'toll', 'parking', 'transit', 'intercity', 'bike'] },
   tickets: { label: t('Giriş ücretleri'), emoji: '🎟️', lines: ['tickets'] },
   shopping: { label: t('Alışveriş'), emoji: '🛍️', lines: ['shopping'] },
   other: { label: t('Diğer'), emoji: '🧾', lines: [] },

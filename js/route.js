@@ -7,7 +7,8 @@
 
 import { fetchPlaces, stripPlace, isSight } from './places.js';
 import { buildItinerary, PACES } from './planner.js';
-import { drivingMatrix, drivingRoute, defaultRadiusFor, countryInfo, wikiForTags, wikiSearch } from './api.js';
+import { BIKE, isBike } from './bike.js';
+import { drivingMatrix, drivingRoute, elevations, defaultRadiusFor, countryInfo, wikiForTags, wikiSearch } from './api.js';
 import { addFoodSuggestions, refreshWeather } from './tripgen.js';
 import { addLodging } from './lodging.js';
 import { saveTrip } from './store.js';
@@ -67,6 +68,7 @@ const pt = (p, city) => ({ name: p.name, lat: p.lat, lon: p.lon, cc: p.cc || '',
 
 export async function generateRoute(f, settings, progress = () => {}) {
   const car = f.transport === 'araba';
+  const B = BIKE[f.transport]; // bisiklet ya da elektrikli bisiklet; değilse undefined
   const start = f.start ? pt(f.start, 's') : null;
   const back = !!(start && f.back);
   const input = f.cities.map(c => ({ ...c }));
@@ -76,9 +78,16 @@ export async function generateRoute(f, settings, progress = () => {}) {
   const nodes = [...(start ? [start] : []), ...input];
   const at = key => (key === 's' ? 0 : key + (start ? 1 : 0)); // matris sırası
   let mx = null;
-  try { mx = await drivingMatrix(nodes); } catch { /* kuş uçuşu tahminle devam */ }
+  try { mx = await drivingMatrix(nodes, B ? 'bike' : 'car'); } catch { /* kuş uçuşu tahminle devam */ }
+  // Bisiklet: şehirler arası net tırmanış (Open-Meteo) süreye eklenir; alınamazsa yokuşsuz devam
+  const el = B ? await elevations(nodes) : null;
+  const climbM = (a, b) => (el ? Math.max(0, el[at(b)] - el[at(a)]) : 0);
   const roadKm = (a, b) => mx?.km[at(a)]?.[at(b)] ?? estKm(nodes[at(a)], nodes[at(b)]);
-  const roadMin = (a, b) => (car ? mx?.min[at(a)]?.[at(b)] ?? estMin(roadKm(a, b)) : transitMin(roadKm(a, b)));
+  const bikeMin = (a, b) => {
+    const raw = mx?.min[at(a)]?.[at(b)];
+    return (raw != null ? raw * B.factor : roadKm(a, b) / B.cruise * 60) + climbM(a, b) / B.climb * 60;
+  };
+  const roadMin = (a, b) => (car ? mx?.min[at(a)]?.[at(b)] ?? estMin(roadKm(a, b)) : B ? bikeMin(a, b) : transitMin(roadKm(a, b)));
   const order = f.optimize && input.length > 1
     ? bestOrder(input.length, (a, b) => roadMin(a, b), !!start, back)
     : input.map((_, i) => i);
@@ -94,14 +103,15 @@ export async function generateRoute(f, settings, progress = () => {}) {
   for (const a of keys) for (const b of keys) {
     if (a === b || (a === 's' && b === 'e') || (a === 'e' && b === 's')) continue;
     const km = roadKm(idxOf(a), idxOf(b));
-    roads[`${a}>${b}`] = { km: Math.round(km), min: Math.round(roadMin(idxOf(a), idxOf(b))) };
+    const climb = Math.round(climbM(idxOf(a), idxOf(b)));
+    roads[`${a}>${b}`] = { km: Math.round(km), min: Math.round(roadMin(idxOf(a), idxOf(b))), ...(climb ? { climb } : {}) };
   }
 
   // Haritada çizilecek gerçek yol
   const seq = [...(start ? [start] : []), ...cities, ...(end ? [end] : [])];
   let geo = null;
   if (seq.length >= 2) {
-    try { geo = (await drivingRoute(seq)).geo; } catch { geo = null; }
+    try { geo = (await drivingRoute(seq, B ? 'bike' : 'car')).geo; } catch { geo = null; }
   }
 
   // ---- 2. Günler ----
@@ -109,23 +119,23 @@ export async function generateRoute(f, settings, progress = () => {}) {
   const days = [];
   const date = parseISODate(f.startDate);
   const next = () => { const iso = toISODate(date); date.setDate(date.getDate() + 1); return iso; };
-  const chain = (from, pass, to) => {
+  const chain = (from, pass, to, field = 'min') => {
     const pts = [from, ...pass, to].filter(Boolean);
     let m = 0;
-    for (let i = 1; i < pts.length; i++) m += roads[`${pts[i - 1].city ?? pts[i - 1].key}>${pts[i].city ?? pts[i].key}`]?.min ?? 0;
+    for (let i = 1; i < pts.length; i++) m += roads[`${pts[i - 1].city ?? pts[i - 1].key}>${pts[i].city ?? pts[i].key}`]?.[field] ?? 0;
     return m;
   };
   const asPoint = c => pt(c, c.key);
   let from = start, pending = [], lastBase = null;
   for (const c of cities) {
     if (!c.nights) { pending.push(c); continue; }
-    days.push({ kind: 'arrive', date: next(), from, pass: pending, base: c, drive: chain(from, pending, asPoint(c)) });
+    days.push({ kind: 'arrive', date: next(), from, pass: pending, base: c, drive: chain(from, pending, asPoint(c)), km: chain(from, pending, asPoint(c), 'km') });
     pending = [];
     for (let k = 1; k < c.nights; k++) days.push({ kind: 'stay', date: next(), base: c, drive: 0 });
     from = asPoint(c); lastBase = c;
   }
   if (end || pending.length || lastBase) {
-    days.push({ kind: 'leave', date: next(), from: lastBase ? from : start, pass: pending, base: lastBase, to: end, drive: chain(lastBase ? from : start, pending, end) });
+    days.push({ kind: 'leave', date: next(), from: lastBase ? from : start, pass: pending, base: lastBase, to: end, drive: chain(lastBase ? from : start, pending, end), km: chain(lastBase ? from : start, pending, end, 'km') });
   }
   if (days.length > MAX_ROUTE_DAYS) throw new Error(t('Rota en fazla {n} gün olabilir; gece sayılarını azalt.', { n: MAX_ROUTE_DAYS }));
 
@@ -210,6 +220,7 @@ export async function generateRoute(f, settings, progress = () => {}) {
       city: d.kind !== 'leave' && d.base ? d.base.key : null,
       cc: lead?.cc || '',
       drive: Math.round(d.drive),
+      km: Math.round(d.km || 0),
     };
   });
 

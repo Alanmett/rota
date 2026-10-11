@@ -4,6 +4,7 @@
 
 import { fmtDay, fmtDur, parseISODate } from './util.js';
 import { TYPES, MUZEKART_TYPES, DRINK_TYPES } from './places.js';
+import { isBike } from './bike.js';
 import { t, locale } from './i18n.js';
 
 const RAINY = c => (c >= 61 && c <= 67) || (c >= 80 && c <= 82) || c >= 95;
@@ -35,6 +36,7 @@ export function buildTips(trip, settings = {}) {
   const cc = trip.dest.cc || home;
   const abroad = cc !== home;
   const car = trip.transport === 'araba';
+  const bike = isBike(trip.transport);
   const stops = trip.days.flatMap(d => d.stops.map(id => trip.places[id])).filter(Boolean);
   const types = new Set(stops.map(p => p.type));
   const cats = new Set(stops.flatMap(p => p.cats));
@@ -76,6 +78,7 @@ export function buildTips(trip, settings = {}) {
   const drinks = stops.some(p => DRINK_TYPES.has(p.type)) || trip.interests?.includes('sarap');
   if (drinks) {
     add('🍷', t('Tadım ziyaretleri'), t('Bağ evleri, şaraphaneler ve bira üreticilerinin çoğu ziyaretçiyi randevuyla kabul eder, pazar günü kapalı olabilir; birkaç gün önceden ara ya da sitesinden yer ayır. Hasat dönemi (eylül–ekim) en canlı ama en kalabalık zamandır.'));
+    if (bike) add('🚴', t('Tadım ve bisiklet'), t("Birçok Avrupa ülkesinde alkol sınırı bisikletliler için de geçerli (İsviçre'de 0,5 promil). Tadımdan sonra bisikleti sürme; itip yürü ya da dönüşü başka türlü yap."), 'warn');
     if (car) add('🚗', t('Tadım ve araba'), t('Avrupa ülkelerinin çoğunda alkol sınırı 0,5 promil, yeni sürücülerde daha düşük ya da sıfır. Tadımda tükürme kabı kullanılabilir; en iyisi grupta içmeyen bir sürücü olması.'), 'warn');
   }
   if ((shopping || drinks) && abroad && home === 'ch') {
@@ -90,6 +93,12 @@ export function buildTips(trip, settings = {}) {
   if (trip.route && trip.days.some(d => d.sleep)) {
     add('🛏️', t('Rotada konaklama'), t('Her gece farklı yerde kalacaksan konaklamaları önceden ayır ve geç varacağın günlerde otele haber ver. Arabayla geziyorsan otoparkı olan yerleri seç.'));
   }
+  if (bike) {
+    add('⛑️', t('Kask ve ekipman'), t("Kask tak: çocuklar için Fransa, Avusturya, Hırvatistan, Slovenya ve Çekya gibi ülkelerde, İspanya'da ise şehir dışı yollarda genelde herkes için zorunlu. Karanlıkta ve tünellerde ışık şart; yedek iç lastik, pompa ve yama takımı al."));
+    if (trip.route ? trip.days.some(d => d.sleep) : trip.days.length > 1) add('🔒', t('Bisikletin nerede kalacak?'), t('Konaklamada bisikletin için kilitli bir oda ya da garaj olup olmadığını sor; dışarıda bırakma.'));
+    add('🚆', t('Bisiklet ve tren'), t('Bir etabı trenle kısaltmak ya da dönüşte trene binmek istersen bazı trenlerde bisiklet için ayrı bilet ya da rezervasyon gerekir; kurallar ülkeye ve trene göre değişir, önceden bak.'));
+    if (trip.transport === 'ebisiklet') add('🔋', t('Pil ve şarj'), t('Elektrikli bisikletin menzili destek seviyesine, yokuşa ve yüke göre değişir (genelde 40–100 km); soğuk hava menzili düşürür. Şarj aletini yanına al.'));
+  }
   if (car && trip.drive && trip.drive.min > 180) add('⏱️', t('Uzun sürüş'), t('Evden tek yön yaklaşık {d} sürüş var. İlk ve son günü hafif tut, en geç 2 saatte bir mola ver.', { d: fmtDur(trip.drive.min) }), 'warn');
 
   // ---- Kişilere özel ----
@@ -100,9 +109,10 @@ export function buildTips(trip, settings = {}) {
   // ---- Gidilen ülkeye özel ----
   if (cc === 'ch') {
     if (car) add('🛣️', t('Otoyol vinyeti'), t('İsviçre otoyollarında yıllık vinyet zorunlu (e-vinyet olarak da alınabiliyor). Şehir merkezlerinde park pahalı ve kısıtlı; Park+Ride çoğu zaman daha mantıklı.'));
-    else add('🚆', t('Toplu taşıma'), t('SBB uygulamasıyla tren, otobüs ve gemi biletlerini tek yerden al.') + ' ' + (settings.halfFare
+    else if (!bike) add('🚆', t('Toplu taşıma'), t('SBB uygulamasıyla tren, otobüs ve gemi biletlerini tek yerden al.') + ' ' + (settings.halfFare
       ? t("Halbtax'ın varsa biletlerin çoğu yarı fiyat.")
       : t('Sık geziyorsan Halbtax (yarı fiyat kartı) ve tasarruflu günlük biletler (Spartageskarte) ciddi fark yaratır.')));
+    if (bike) add('🗺️', t('İşaretli bisiklet rotaları'), t("SchweizMobil uygulaması ve sitesi İsviçre'nin işaretli bisiklet rotalarını (Veloland) gösterir; trafikten uzak güzergâhlar için bak."));
     if (types.has('museum')) add('🎟️', t('İsviçre Müze Pasaportu'), t("Yıllık Schweizer Museumspass ile ülke genelinde 500'den fazla müzeye girilebiliyor. Yılda birkaç müze geziyorsan kendini çıkarır."));
     if (sunday) add('🛒', t('Pazar günü'), t("İsviçre'de pazar günleri dükkânların çoğu kapalı; açık olanlar genelde büyük tren istasyonlarında ve benzinliklerde. Erzakını önceden al."));
     if (cats.has('dogal') || types.has('viewpoint')) {

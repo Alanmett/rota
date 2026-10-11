@@ -4,6 +4,7 @@
 import { haversineKm, parseISODate, fmtClock } from './util.js';
 import { hoursOn } from './hours.js';
 import { DRINK_TYPES } from './places.js';
+import { BIKE, isBike } from './bike.js';
 import { t } from './i18n.js';
 
 export const PACES = {
@@ -16,9 +17,13 @@ export const TRANSPORTS = {
   araba: { label: t('Araba'), emoji: '🚗', gmode: 'driving' },
   toplu: { label: t('Toplu taşıma'), emoji: '🚌', gmode: 'transit' },
   yuruyus: { label: t('Yürüyerek'), emoji: '🚶', gmode: 'walking' },
+  bisiklet: { label: t('Bisiklet'), emoji: '🚴', gmode: 'bicycling' },
+  ebisiklet: { label: t('E-bisiklet'), emoji: '⚡', gmode: 'bicycling' },
 };
 
-export const LEG_EMOJI = { walk: '🚶', car: '🚗', transit: '🚌' };
+export const LEG_EMOJI = { walk: '🚶', car: '🚗', transit: '🚌', bike: '🚴' };
+// Yol türü: gerçek yol süresi olan etaplarda (rota) simge ve ulaşım türü
+export const roadMode = transport => (transport === 'araba' ? 'car' : isBike(transport) ? 'bike' : 'transit');
 
 // İki nokta arası tahmini yol: kuş uçuşu × 1,3 (yol eğriliği), ulaşım türüne göre hız.
 export function leg(a, b, transport) {
@@ -26,6 +31,7 @@ export function leg(a, b, transport) {
   if (km <= 1.2) return { km, min: Math.max(2, Math.round(km / 4.5 * 60)), mode: 'walk' };
   if (transport === 'araba') return { km, min: Math.round(km <= 15 ? km / 30 * 60 + 8 : km / 65 * 60 + 10), mode: 'car' };
   if (transport === 'yuruyus' && km <= 2.5) return { km, min: Math.round(km / 4.5 * 60), mode: 'walk' };
+  if (isBike(transport)) return { km, min: Math.round(km / BIKE[transport].town * 60 + 3), mode: 'bike' }; // +3 dk: kilitleme, park
   return { km, min: Math.round(km / 18 * 60 + 10), mode: 'transit' };
 }
 
@@ -53,6 +59,8 @@ function adjustedScore(p, o) {
     if (p.cats.some(c => c === 'aile' || c === 'park' || c === 'plaj')) v *= 1.4;
     if (p.type === 'museum') v *= 0.85;
   }
+  // Bisikletle zirveye çıkmak çok yorucu (çoğu zaman teleferik gerekir): gün planına nadiren girer, "vakit kalırsa" listesinde kalır
+  if (isBike(o.transport) && (p.type === 'peak' || p.type === 'volcano')) v *= o.transport === 'ebisiklet' ? 0.5 : 0.25;
   return v;
 }
 
@@ -82,7 +90,7 @@ function improveOrder(ids, byId, origin) {
 export function buildItinerary(places, dates, o) {
   const tr = o.travelers || {};
   const factor = (tr.elderly ? 0.8 : 1) * (tr.children ? 0.9 : 1);
-  const maxLeg = o.transport === 'araba' ? 75 : o.transport === 'toplu' ? 50 : 35;
+  const maxLeg = o.transport === 'araba' ? 75 : o.transport === 'toplu' ? 50 : isBike(o.transport) ? 60 : 35;
   const byId = Object.fromEntries(places.map(p => [p.id, p]));
   const ranked = places
     .filter(p => p.type !== 'water') // göllerin koordinatı suyun ortası; plana durak olarak konmaz
@@ -194,7 +202,7 @@ export function tripLeg(trip, a, b) {
   const roads = trip.route?.roads;
   if (roads && a.city != null && b.city != null && a.city !== b.city) {
     const r = roads[`${a.city}>${b.city}`] || roads[`${b.city}>${a.city}`];
-    if (r) return { km: r.km, min: r.min, mode: trip.transport === 'araba' ? 'car' : 'transit', road: true };
+    if (r) return { km: r.km, min: r.min, mode: roadMode(trip.transport), road: true, ...(r.climb ? { climb: r.climb } : {}) };
   }
   return leg(a, b, trip.transport);
 }

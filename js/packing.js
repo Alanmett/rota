@@ -2,12 +2,14 @@
 // yerlere göre kurallarla oluşturulur (YZ gerekmez). İşaretler ve kullanıcının eklediği maddeler gezide saklanır.
 
 import { parseISODate } from './util.js';
+import { isBike } from './bike.js';
 import { t } from './i18n.js';
 
 export const PACK_CATS = {
   belge: { label: t('Belgeler'), emoji: '📄' },
   para: { label: t('Para ve iletişim'), emoji: '💳' },
   arac: { label: t('Araç'), emoji: '🚗' },
+  bisiklet: { label: t('Bisiklet'), emoji: '🚴' },
   saglik: { label: t('Sağlık'), emoji: '🩺' },
   giyim: { label: t('Giyim'), emoji: '👕' },
   elektronik: { label: t('Elektronik'), emoji: '🔌' },
@@ -31,6 +33,7 @@ export function buildPacking(trip, settings) {
   const foreign = ccs.filter(cc => cc !== home);
   const abroad = foreign.length > 0;
   const car = trip.transport === 'araba';
+  const bike = isBike(trip.transport);
   const tr = trip.travelers || {};
   const stops = trip.days.flatMap(d => d.stops.map(id => trip.places[id])).filter(Boolean);
   const types = new Set(stops.map(p => p.type));
@@ -73,6 +76,18 @@ export function buildPacking(trip, settings) {
     if (ccs.includes('tr')) add('arac', 'hgs', t('HGS etiketi (otoyol ve köprüler için)'), home !== 'tr' ? t("Yabancı plakalı araç için PTT'den alınabilir.") : null);
     if (abroad) add('arac', 'vest', t('Reflektörlü yelek ve üçgen reflektör'), t('Birçok Avrupa ülkesinde araçta bulunması zorunlu.'));
     if (winter) add('arac', 'winter', t('Kış lastiği ya da kar zinciri'), t('Kışın dağ yollarında zorunlu olabilir.'));
+  }
+
+  // ---- Bisiklet ----
+  if (bike) {
+    add('bisiklet', 'helmet', t('Bisiklet kaskı'), t('Çocuklar için birçok ülkede zorunlu.'));
+    add('bisiklet', 'lights', t('Ön ve arka ışık'), t('Tünelde ve karanlıkta şart.'));
+    add('bisiklet', 'repair', t('Yedek iç lastik, pompa ve yama takımı'));
+    add('bisiklet', 'lock', t('Bisiklet kilidi'));
+    add('bisiklet', 'gloves', t('Bisiklet eldiveni'));
+    add('bisiklet', 'hivis', t('Parlak renkli ya da reflektörlü giysi'));
+    add('bisiklet', 'holder', t('Bisiklet için telefon tutucu'), t('Navigasyon pili çabuk bitirir; powerbank işe yarar.'));
+    if (trip.transport === 'ebisiklet') add('bisiklet', 'eccharger', t('Elektrikli bisiklet şarj aleti'), t('Pili her gece şarj et; konaklamada şarj imkânı sor.'));
   }
 
   // ---- Para ve iletişim ----

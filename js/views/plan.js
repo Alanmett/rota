@@ -45,9 +45,10 @@ const routeCity = r => ({
 });
 
 // Öner ekranından "Rotaya ekle": durak sayısını döndürür (sığmadıysa 0)
-export function addToRoute(place) {
+export function addToRoute(place, transport) {
   form ||= initForm();
   form.mode = 'rota';
+  if (transport && !form.route.cities.length) form.transport = transport; // ilk durakla birlikte bisiklet seçimi taşınır
   if (form.route.cities.length >= MAX_ROUTE_STOPS) return 0;
   form.route.cities.push(routeCity(place));
   return form.route.cities.length;

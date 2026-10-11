@@ -6,7 +6,8 @@ import { tripText, shareText, downloadICS } from '../share.js';
 import { dayStatus } from '../today.js';
 import { EXP_CATS, expensesOf, spentTotal, spentByCat, expenseSheet, removeExpense, fmtOrig } from '../expenses.js';
 import { getTrip, saveTrip, deleteTrip, getSettings } from '../store.js';
-import { computeTimeline, gmapsDayLink, gmapsDir, bestInsertIndex, PACES, TRANSPORTS, LEG_EMOJI } from '../planner.js';
+import { computeTimeline, gmapsDayLink, gmapsDir, bestInsertIndex, PACES, TRANSPORTS, LEG_EMOJI, roadMode } from '../planner.js';
+import { BIKE, bikeWarnings } from '../bike.js';
 import { computeBudget, STAYS, stayOf, FOODS, foodOf, savingTips, factorNote, destCurrency, ticketInfo } from '../budget.js';
 import { tripTips } from '../tips.js';
 import { refreshWeather, addParking } from '../tripgen.js';
@@ -319,7 +320,7 @@ function routeCard(trip) {
   seq.forEach((c, i) => {
     if (i > 0) {
       const rd = road(seq[i - 1], c);
-      if (rd) rows.push(h('div', { class: 'rt-leg muted small' }, `${trip.transport === 'araba' ? '🚗' : '🚆'} ${fmtDur(rd.min)} · ${fmtKm(rd.km)}`));
+      if (rd) rows.push(h('div', { class: 'rt-leg muted small' }, `${LEG_EMOJI[roadMode(trip.transport)]} ${fmtDur(rd.min)} · ${fmtKm(rd.km)}${rd.climb >= 100 ? ` · ↗ ${rd.climb} m` : ''}`));
     }
     const ends = c.key === 's' || c.key === 'e';
     const lt = !ends && c.nights > 0 ? targets.find(x => x.key === c.key) : null;
@@ -355,6 +356,11 @@ function renderPlanTab(body, ctx) {
   }
   ctx.budget = computeBudget(trip, ctx.settings);
   body.append(overviewCard(ctx));
+  const bw = bikeWarnings(trip);
+  if (bw.length) {
+    body.append(h('section', { class: 'note warn bike-note' }, h('b', {}, '🚴 ' + t('Bisikletle gezi: süreler ve sınırlar')),
+      h('ul', {}, bw.map(w => h('li', {}, `${w.icon} ${w.text}`)))));
+  }
   const lodging = lodgingCard(ctx);
   if (lodging) body.append(lodging);
   if (trip.route) body.append(routeCard(trip));
@@ -413,7 +419,7 @@ function guideInput(trip, di) {
   const road = tl.items.filter(x => x.kind === 'leg' && x.road).reduce((s, x) => s + x.min, 0);
   return {
     travelers: `${tr.adults} adults${tr.children ? `, ${tr.children} children` : ''}${tr.elderly ? ', someone with limited mobility' : ''}${tr.pet ? ', a pet' : ''}`,
-    transport: { araba: 'car', toplu: 'public transport', yuruyus: 'on foot' }[trip.transport] || trip.transport,
+    transport: { araba: 'car', toplu: 'public transport', yuruyus: 'on foot', bisiklet: 'bicycle', ebisiklet: 'electric bicycle' }[trip.transport] || trip.transport,
     drive: road ? `${day.from?.name || ''} → ${day.sleep?.name || day.to?.name || ''}, about ${Math.round(road / 60 * 10) / 10} h on the road` : '',
     weather: w ? `${Math.round(w.tmin)}–${Math.round(w.tmax)} °C, ${WX(w.code)[1]}${w.pop != null ? `, rain chance ${w.pop}%` : ''}${trip.weather.source === 'archive' ? ' (last year, indicative)' : ''}` : '',
     typeOf: p => typeLabel(p),
@@ -501,7 +507,7 @@ function dayCard(ctx, di) {
   for (const it of tl.items) {
     if (it.kind === 'leg') {
       list.append(h('li', { class: 'tl-leg' + (it.road ? ' road' : '') }, h('span', { class: 'line' }),
-        h('span', { class: 'txt' }, `${LEG_EMOJI[it.mode]} ${it.to ? it.to + ' · ' : ''}${fmtDur(it.min)} · ${fmtKm(it.km)}`)));
+        h('span', { class: 'txt' }, `${LEG_EMOJI[it.mode]} ${it.to ? it.to + ' · ' : ''}${fmtDur(it.min)} · ${fmtKm(it.km)}${it.climb >= 100 ? ` · ↗ ${it.climb} m` : ''}`)));
     } else if (it.kind === 'lunch') {
       list.append(mealItem(t('Öğle yemeği'), it.start, day.lunch));
     } else if (it.kind === 'sleep' || it.kind === 'end') {
@@ -523,13 +529,18 @@ function dayCard(ctx, di) {
   const limit = di === 0 && trip.kind === 'today' ? Infinity : PACES[trip.pace].budget * 1.2;
   const route = gmapsDayLink(trip, di);
   const where = trip.route && (day.sleep?.name || day.to?.name);
-  const longDrive = (day.drive || 0) > 480;
+  const B = BIKE[trip.transport];
+  const longDrive = (day.drive || 0) > (B ? B.dayMin : 480);
+  const dayClimb = B ? tl.items.reduce((s, it) => s + (it.kind === 'leg' && it.climb ? it.climb : 0), 0) : 0;
   return h('section', { class: 'day' + (isToday ? ' today' : ''), style: `--day:${color(di)}` },
     h('header', { class: 'day-head' },
       h('div', {}, h('div', { class: 'day-num' }, dayLabel(di + 1) + (where ? ` · ${where}` : ''), isToday && h('span', { class: 'badge ok today-badge' }, t('Bugün'))),
         h('div', { class: 'day-date' }, fmtDayLong(day.date))),
       wx && wxPill(wx, trip.weather.source)),
-    longDrive && h('div', { class: 'note warn day-note' }, t('Bu gün {d} yol var. Arada bir şehirde gece kalmayı düşün.', { d: fmtDur(day.drive) })),
+    longDrive && h('div', { class: 'note warn day-note' }, B
+      ? t('Bu gün {d} bisiklet sürüşü var. Bir yerde gece kalmayı ya da bir kısmını trenle yapmayı düşün.', { d: fmtDur(day.drive) })
+      : t('Bu gün {d} yol var. Arada bir şehirde gece kalmayı düşün.', { d: fmtDur(day.drive) })),
+    dayClimb >= 300 && h('div', { class: 'note warn day-note' }, t('Bu günün yolunda yaklaşık {m} m tırmanış var; süreye eklendi, yorucu olabilir.', { m: dayClimb })),
     dayGuideBlock(ctx, di),
     day.stops.length || (trip.route && tl.items.length) ? list : h('p', { class: 'muted day-empty' }, t('Bu güne henüz yer eklenmedi. Aşağıdaki "Vakit kalırsa" listesinden ekleyebilirsin.')),
     day.stops.length > 0 && h('footer', { class: 'day-foot' },
