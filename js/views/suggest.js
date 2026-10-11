@@ -24,7 +24,7 @@ const TIMES = [
   { value: '6-10', label: t('{a}–{b} saat', { a: 6, b: 10 }), min: 6, max: 10 }, // uçakla uzak yerler için
   { value: 'ozel', label: t('Özel…') },
 ];
-const MODE_ICON = { araba: '🚗', tren: '🚆', ucak: '✈️' };
+const MODE_ICON = { araba: '🚗', tren: '🚆', ucak: '✈️', bisiklet: '🚴' };
 const MAIN_COUNTRIES = ['CH', 'IT', 'FR', 'DE', 'AT', 'TR'];
 const LENGTHS = [{ value: 'gun', label: t('Günübirlik') }, { value: 'hafta', label: t('Hafta sonu') }, { value: 'uzun', label: t('3+ gün') }];
 
@@ -131,6 +131,10 @@ export function renderSuggest(root) {
   const nearbyText = p => t('Yakınında: {x}', { x: p.nearby.map(x => x.name).join(', ') });
 
   const resultMode = () => state.resultMode || state.mode;
+  // Bisikletle günübirlik gidiş-dönüş çabuk yorucu olur: eşik arabadan düşük. Bisiklet süreleri (hız, mola, yokuş) her zaman tahmindir.
+  const dayLimit = () => (resultMode() === 'bisiklet' ? 2 : 2.5);
+  const approx = p => !p.real || resultMode() === 'bisiklet';
+  const bikeUrl = p => `https://www.google.com/maps/dir/?api=1&origin=${state.origin.lat},${state.origin.lon}&destination=${p.lat},${p.lon}&travelmode=bicycling`;
 
   function card(p) {
     const hr = hoursOf(p);
@@ -141,15 +145,16 @@ export function renderSuggest(root) {
         h('div', { class: 'pc-name' }, p.name),
         h('div', { class: 'pc-meta' },
           h('span', {}, `${KINDS[p.kind]?.emoji || ''} ${COUNTRY_NAMES[p.cc] || p.cc}`),
-          h('span', { class: 'time' }, `${icon} ${p.real ? '' : '≈ '}${fmtDur(hr * 60)}`),
+          h('span', { class: 'time' }, `${icon} ${approx(p) ? '≈ ' : ''}${fmtDur(hr * 60)}`),
           p.roadKm ? h('span', {}, fmtKm(p.roadKm)) : null,
+          p.climb >= 100 ? h('span', {}, `↗ ${p.climb} m`) : null,
           p.flight ? h('span', {}, `${p.flight.from.iata} → ${p.flight.to.iata}`) : null,
           p.transfers != null ? h('span', {}, p.transfers ? t('{n} aktarma', { n: p.transfers }) : t('aktarmasız')) : null),
         h('div', { class: 'pc-meta' },
           p.unesco && h('span', { class: 'badge star' }, 'UNESCO'),
           p.wv >= 3 && h('span', { class: 'badge' }, t('{n} dilde gezi rehberi', { n: p.wv }))),
         p.nearby?.length ? h('div', { class: 'muted small' }, nearbyText(p)) : null,
-        state.len === 'gun' && state.min < 2.5 && hr > 2.5 ? h('div', { class: 'tl-warn' }, '⚠️ ' + t('Günübirlik için uzun; bir gece kalmayı düşün')) : null),
+        state.len === 'gun' && state.min < dayLimit() && hr > dayLimit() ? h('div', { class: 'tl-warn' }, '⚠️ ' + t('Günübirlik için uzun; bir gece kalmayı düşün')) : null),
       h('span', { class: 'chev', 'aria-hidden': 'true' }, '›'));
   }
 
@@ -202,12 +207,13 @@ export function renderSuggest(root) {
         h('b', {}, t('{n} öneri', { n: list.length })),
         segmented([{ value: 'list', label: t('Liste') }, { value: 'map', label: t('Harita') }], state.view, v => { state.view = v; renderResults(); })),
       clearBtn(),
-      state.len === 'gun' && state.min >= 2.5 && h('div', { class: 'note warn' },
+      state.len === 'gun' && state.min >= dayLimit() && h('div', { class: 'note warn' },
         t('Tek yön {a}+ saat, günübirlik için yorucu olur (gidiş-dönüş {b}+ saat yol). Bir gece kalmayı düşün; "Kaç gün?" kısmından "Hafta sonu"nu seçebilirsin.', { a: decimal(state.min), b: decimal(state.min * 2) })),
       content,
       h('p', { class: 'muted small source' }, t('Sıralama: gezi rehberlerinde (Wikivoyage) kaç dilde maddesi olduğu, ne kadar bilindiği ve UNESCO mirası olup olmadığı.') + ' ',
         { tren: t('Tren süreleri İsviçre tarifesinden; "≈" olanlar tahmin.'), araba: t('Araba süreleri trafiksiz; "≈" olanlar tahmin.'),
-          ucak: t('Uçak süreleri tahmindir: havalimanına yol, giriş işlemleri, uçuş ve varıştan sonraki yol dahil. Direkt uçuş olup olmadığını uçuş sitesinden kontrol et.') }[resultMode()]));
+          ucak: t('Uçak süreleri tahmindir: havalimanına yol, giriş işlemleri, uçuş ve varıştan sonraki yol dahil. Direkt uçuş olup olmadığını uçuş sitesinden kontrol et.'),
+          bisiklet: t('Bisiklet süreleri bisiklet yollarına göre, ortalama bir sürücü için hesaplanır; kavşak ve mola payı ile yokuş farkı eklenmiştir, hepsi tahmindir.') }[resultMode()]));
   }
 
   function detail(p) {
@@ -221,7 +227,12 @@ export function renderSuggest(root) {
       info,
       h('ul', { class: 'facts' },
         h('li', {}, h('span', {}, MODE_ICON[resultMode()] || '🚗'), h('span', {},
-          (p.real ? '' : t('Yaklaşık') + ' ') + fmtDur(hr * 60) + way + (p.station ? ' · ' + t('varış: {s}', { s: p.station }) : ''))),
+          (approx(p) ? t('Yaklaşık') + ' ' : '') + fmtDur(hr * 60) + way + (p.station ? ' · ' + t('varış: {s}', { s: p.station }) : ''))),
+        p.elev != null ? h('li', {}, h('span', {}, '⛰️'), h('span', {}, t('Yükseklik: {a} m → {b} m', { a: p.elevFrom, b: p.elev }))) : null,
+        resultMode() === 'bisiklet' ? h('li', {}, h('span', {}, '⚠️'), h('span', {},
+          t('Yokuşlar süreyi uzatır. Bu tahmin yalnızca başlangıç ile varış arasındaki yükseklik farkını sayar, aradaki tepeleri değil; rotayı bisiklet haritasında kontrol et.'))) : null,
+        resultMode() === 'bisiklet' ? h('li', {}, h('span', {}, '🚆'), h('span', {},
+          t('Dönüşte yorulursan trene binebilirsin; bazı trenlerde bisiklet için ayrı bilet ya da rezervasyon gerekir, önceden bak.'))) : null,
         p.flight ? h('li', {}, h('span', {}, '🛫'), h('span', {},
           t('{a} → {b} · uçuşun kendisi yaklaşık {f}', { a: `${p.flight.from.name} (${p.flight.from.iata})`, b: `${p.flight.to.name} (${p.flight.to.iata})`, f: fmtDur(p.flight.flight * 60) }))) : null,
         p.flight ? h('li', {}, h('span', {}, '⚠️'), h('span', {}, t('Direkt uçuş olup olmadığını ve fiyatı uçuş sitesinden kontrol et.'))) : null,
@@ -232,6 +243,7 @@ export function renderSuggest(root) {
         h('button', { class: 'btn', onclick: () => exploreHere(p) }, '🧭 ' + t('Çevresini keşfet')),
         h('button', { class: 'btn', onclick: () => routeHere(p) }, '➕ ' + t('Rotaya ekle')),
         p.flight && linkBtn('✈️ ' + t('Uçuşlara bak'), flightsUrl(p.flight.from, p.flight.to)),
+        resultMode() === 'bisiklet' && linkBtn('🚴 ' + t('Bisiklet rotası'), bikeUrl(p)),
         linkBtn('📗 ' + t('Gezi rehberi'), `https://www.wikidata.org/wiki/Special:GoToLinkedPage/${getLang()}wikivoyage/${p.q}`))));
     wikiForTags({ wikidata: p.q }).then(w => {
       if (!info.isConnected) return;
@@ -277,7 +289,7 @@ export function renderSuggest(root) {
     h('section', {}, h('h2', { class: 'h-sec' }, t('Kaç gün?')), segmented(LENGTHS, state.len, v => { state.len = v; persist(); if (state.results) renderResults(); })),
     h('section', {}, h('h2', { class: 'h-sec' }, t('Ne kadar yol?')), timeBox),
     h('section', {}, h('h2', { class: 'h-sec' }, t('Nasıl gideceksin?')),
-      segmented([{ value: 'araba', label: '🚗 ' + t('Araba') }, { value: 'tren', label: '🚆 ' + t('Tren') }, { value: 'ucak', label: '✈️ ' + t('Uçak') }],
+      segmented([{ value: 'araba', label: '🚗 ' + t('Araba') }, { value: 'tren', label: '🚆 ' + t('Tren') }, { value: 'ucak', label: '✈️ ' + t('Uçak') }, { value: 'bisiklet', label: '🚴 ' + t('Bisiklet') }],
         state.mode, v => { state.mode = v; persist(); })),
     h('section', {}, h('h2', { class: 'h-sec' }, t('Hangi ülke?')), countryBox),
     h('section', {}, h('h2', { class: 'h-sec' }, t('Ne tür bir yer?')),

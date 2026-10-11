@@ -895,4 +895,11 @@ export default {
   "{a} → {b} · uçuşun kendisi yaklaşık {f}": "{a} → {b} · le vol en lui-même dure environ {f}",
   "Direkt uçuş olup olmadığını ve fiyatı uçuş sitesinden kontrol et.": "Vérifiez sur un site de vols s'il existe un vol direct et son prix.",
   "Uçuşlara bak": "Voir les vols",
+  "Bisiklet": "Vélo",
+  "Bisiklet yolları ve yokuşlar hesaplanıyor…": "Calcul des itinéraires à vélo et des dénivelés…",
+  "Bisiklet süreleri bisiklet yollarına göre, ortalama bir sürücü için hesaplanır; kavşak ve mola payı ile yokuş farkı eklenmiştir, hepsi tahmindir.": "Les durées à vélo sont calculées sur des itinéraires cyclables pour un cycliste moyen, avec une marge pour les carrefours et les pauses ainsi que le dénivelé. Tout est estimatif.",
+  "Yükseklik: {a} m → {b} m": "Altitude : {a} m → {b} m",
+  "Yokuşlar süreyi uzatır. Bu tahmin yalnızca başlangıç ile varış arasındaki yükseklik farkını sayar, aradaki tepeleri değil; rotayı bisiklet haritasında kontrol et.": "Les côtes allongent le trajet. Cette estimation ne compte que la différence d'altitude entre le départ et l'arrivée, pas les collines entre les deux. Vérifiez l'itinéraire sur une carte cyclable.",
+  "Dönüşte yorulursan trene binebilirsin; bazı trenlerde bisiklet için ayrı bilet ya da rezervasyon gerekir, önceden bak.": "Si vous êtes fatigué au retour, vous pouvez prendre le train. Certains trains exigent un billet ou une réservation pour le vélo ; renseignez-vous avant.",
+  "Bisiklet rotası": "Itinéraire à vélo",
 };

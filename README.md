@@ -2,7 +2,7 @@
 
 Telefonda uygulama gibi çalışan (PWA) gezi planlayıcı. Günübirlik ve uzun geziler için:
 
-- **Öner ("Nereye gidelim?"):** Nereden çıkacağın, ne kadar yol göze aldığın ("3–4 saat"), araba, tren ya da uçak, ülke ve yer türüne göre gidilecek yer önerir. Araba süreleri OSRM'den, tren süreleri İsviçre tarifesinden (transport.opendata.ch) gerçek değerlerdir. **Uçak** süreleri tahmindir (ücretsiz tarife verisi yok): havalimanına yol + giriş işlemleri + uçuş + bagaj/çıkış + varış yolu toplanır; yılda en az 1 milyon yolcusu olan en yakın havalimanlarından, en az 0,7 milyon yolculu varış havalimanlarına, en az 400 km'lik uçuşlar hesaplanır ve en az bir ucu büyük (3 milyon+) havalimanı olmalıdır. Direkt uçuş garantisi yoktur; her yerin ayrıntısındaki "Uçuşlara bak" Google Uçuşlar'da aynı havalimanı çiftini açar.
+- **Öner ("Nereye gidelim?"):** Nereden çıkacağın, ne kadar yol göze aldığın ("3–4 saat"), araba, tren, uçak ya da bisiklet, ülke ve yer türüne göre gidilecek yer önerir. Araba süreleri OSRM'den, tren süreleri İsviçre tarifesinden (transport.opendata.ch) gerçek değerlerdir. **Bisiklet** süreleri OpenStreetMap'in bisiklet profilli rota sunucusundan (bisiklet yollarını kullanır, otoyolu atlar) alınır; %10 kavşak/mola payı eklenir, yokuş için başlangıç ile varış arasındaki yükseklik farkı (Open-Meteo) her 800 m tırmanış için 1 saat olarak sayılır. Aradaki tepeler sayılmadığı için süre alttan tahmindir; ayrıntıda Google Haritalar'da bisiklet rotası açan düğme var. Servislere ulaşılamazsa kuş uçuşundan tahmine düşer. **Uçak** süreleri tahmindir (ücretsiz tarife verisi yok): havalimanına yol + giriş işlemleri + uçuş + bagaj/çıkış + varış yolu toplanır; yılda en az 1 milyon yolcusu olan en yakın havalimanlarından, en az 0,7 milyon yolculu varış havalimanlarına, en az 400 km'lik uçuşlar hesaplanır ve en az bir ucu büyük (3 milyon+) havalimanı olmalıdır. Direkt uçuş garantisi yoktur; her yerin ayrıntısındaki "Uçuşlara bak" Google Uçuşlar'da aynı havalimanı çiftini açar.
 - **Keşfet:** Bulunduğun yerin ya da seçtiğin bir yerin çevresindeki tarihi, doğal ve görülecek yerler; tek dokunuşla "bugün için plan". "Az bilinenler" seçeneği kalabalık turistik yerler yerine gözden kaçan yerleri öne çıkarır.
 - **Rota (Planla → Birkaç yer):** Görmek istediğin şehirleri haritaya dokunarak ya da arayarak işaretle, her birine gece sayısı ver (0 = yol üstü uğrama). Uygulama en kısa sırayı ve gerçek yol rotasını (OSRM) bulur, geceleri günlere dağıtır, her şehir için gün gün plan, yemek, otopark, hava, bütçe (her günün ülkesine göre) ve uyarılar çıkarır. Öner sekmesindeki yerler "Rotaya ekle" ile eklenebilir.
 - **Şarap & bira:** Bağlar, şaraphaneler, şampanya evleri, manastır ve tarihi bira üreticileri, damıtımevleri (Wikidata + OSM, tüm ülkeler). Planlarda günde en fazla iki tadım durağı; randevu, alkol-araç ve gümrük uyarıları.
@@ -49,6 +49,8 @@ powershell -ExecutionPolicy Bypass -File tools/i18n-check.ps1
 | Açıklama ve fotoğraf | Wikipedia |
 | Hava | Open-Meteo |
 | Yol mesafesi | OSRM |
+| Bisiklet süresi ve mesafesi | OSRM bisiklet profili (routing.openstreetmap.de) |
+| Yükseklik (bisiklet yokuşu) | Open-Meteo |
 | Havalimanları (uçak seçeneği) | Wikidata (IATA kodu, yıllık yolcu sayısı) |
 | Ülke bilgisi (başkent, dil, trafik yönü) | Wikidata + tarayıcının kendi çevirileri |
 | Döviz kuru | frankfurter.dev (Avrupa Merkez Bankası) |

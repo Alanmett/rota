@@ -1,6 +1,7 @@
 // "Nereye gidelim?": uygulamayla gelen veri setinden (data/destinations.json, tools/build-destinations.ps1 üretir)
 // yol süresine göre gidilecek yer önerir. Önce kuş uçuşu mesafeyle kaba eleme, sonra gerçek süre:
-// araba → OSRM, tren → transport.opendata.ch (İsviçre'den kalkışlarda gerçek tarife), uçak → havalimanı verisinden tahmin (flights.js).
+// araba → OSRM, tren → transport.opendata.ch (İsviçre'den kalkışlarda gerçek tarife), uçak → havalimanı verisinden tahmin (flights.js),
+// bisiklet → OSRM'nin bisiklet profili + iki uç arasındaki yükseklik farkından yokuş payı.
 
 import { haversineKm } from './util.js';
 import { t, locale, getLang } from './i18n.js';
@@ -31,26 +32,54 @@ export async function loadDestinations() {
 // Kaba süre tahmini; yalnızca ön eleme ve gerçek süre alınamazsa kullanılır.
 export function estimateHours(km, mode) {
   const road = km * 1.3;
+  if (mode === 'bisiklet') return road / 16; // sıradan bir sürücünün düz yoldaki ortalaması
   return mode === 'tren' ? road / 95 + 0.3 : road / 80 + 0.1; // tren: İsviçre hatlarına göre kabaca ayarlı
 }
 
 // Önem: kaç dilde gezi rehberi maddesi var (ağırlıklı), ne kadar bilinen bir yer, UNESCO mirası mı
 const worth = d => 2.5 * Math.log(1 + d.wv) + Math.log(1 + d.sl) + (d.unesco ? 1.5 : 0);
 
-async function carTimes(origin, list) {
+// Araba: OSRM'nin genel sunucusu. Bisiklet: OpenStreetMap Almanya'nın bisiklet profilli sunucusu (otoyolu atlar, bisiklet yollarını kullanır);
+// verdiği süre kavşak, trafik ışığı ve mola için %10 uzatılır.
+const ROUTERS = {
+  araba: { url: 'https://router.project-osrm.org/table/v1/driving/', factor: 1 },
+  bisiklet: { url: 'https://routing.openstreetmap.de/routed-bike/table/v1/driving/', factor: 1.1 },
+};
+
+async function roadTimes(origin, list, mode) {
+  const { url, factor } = ROUTERS[mode];
   for (let i = 0; i < list.length; i += 90) {
     const chunk = list.slice(i, i + 90);
     const coords = [origin, ...chunk].map(p => `${p.lon.toFixed(5)},${p.lat.toFixed(5)}`).join(';');
     try {
-      const r = await getJSON(`https://router.project-osrm.org/table/v1/driving/${coords}?sources=0&annotations=duration,distance`, 15000);
+      const r = await getJSON(`${url}${coords}?sources=0&annotations=duration,distance`, 15000);
       if (r.code !== 'Ok') continue;
       chunk.forEach((p, j) => {
         const sec = r.durations[0][j + 1], m = r.distances?.[0][j + 1];
-        if (sec != null) { p.hours = sec / 3600; p.roadKm = m / 1000; p.real = true; }
+        if (sec != null) { p.hours = sec / 3600 * factor; p.roadKm = m / 1000; p.real = true; }
         else p.unreachable = true; // ör. adalar
       });
     } catch { /* tahminle devam */ }
   }
+}
+
+// Yokuş: Open-Meteo yükseklik servisi (anahtarsız, tek istekte 100 nokta). Yalnızca iki uç arasındaki farka bakılır,
+// aradaki tepeler sayılmaz; bu yüzden süre alttan tahmindir. Her 800 m tırmanış bir saat ekler.
+const CLIMB_M_PER_H = 800;
+async function addClimb(origin, list) {
+  const pts = [origin, ...list].slice(0, 100);
+  try {
+    const q = k => pts.map(p => p[k].toFixed(4)).join(',');
+    const r = await getJSON(`https://api.open-meteo.com/v1/elevation?latitude=${q('lat')}&longitude=${q('lon')}`, 8000);
+    const el = r.elevation;
+    if (!Array.isArray(el) || el.length !== pts.length || typeof el[0] !== 'number') return;
+    list.slice(0, pts.length - 1).forEach((p, i) => {
+      if (typeof el[i + 1] !== 'number') return;
+      const up = Math.max(0, el[i + 1] - el[0]);
+      Object.assign(p, { elevFrom: Math.round(el[0]), elev: Math.round(el[i + 1]), climb: Math.round(up) });
+      if (p.real) p.hours += up / CLIMB_M_PER_H; else p.est += up / CLIMB_M_PER_H;
+    });
+  } catch { /* yokuşsuz tahminle devam */ }
 }
 
 const OPENDATA = 'https://transport.opendata.ch/v1';
@@ -106,6 +135,7 @@ async function trainTimes(origin, list) {
 
 export async function suggest({ origin, minH, maxH, mode, countries, kinds, limit = 24 }, progress = () => {}) {
   progress(mode === 'ucak' ? t('Havalimanları taranıyor…') : t('Gidilecek yerler taranıyor…'));
+  const bike = mode === 'bisiklet';
   const all = await loadDestinations();
   // Uçak: süre havalimanı verisinden yerelde hesaplanır; çıkış yerinin yakınında havalimanı yoksa öneri çıkmaz
   const air = mode === 'ucak' ? await flightFinder(origin) : null;
@@ -130,9 +160,11 @@ export async function suggest({ origin, minH, maxH, mode, countries, kinds, limi
   cands.sort((a, b) => b.s - a.s);
 
   // Aynı noktadaki birçok yer (Como, Bellagio, Varenna…) tek kartta toplanır: "yakınında" olarak gösterilir.
+  // Bisikletle menzil kısa olduğu için birleştirme yarıçapı daha dar.
+  const merge = bike ? 7 : 12;
   const picked = [];
   for (const c of cands) {
-    const near = picked.find(p => haversineKm(p, c) < 12);
+    const near = picked.find(p => haversineKm(p, c) < merge);
     if (near) { if ((near.nearby ||= []).length < 4) near.nearby.push(c); continue; }
     picked.push(c);
     if (picked.length >= (mode === 'tren' ? 40 : 80)) break;
@@ -148,7 +180,12 @@ export async function suggest({ origin, minH, maxH, mode, countries, kinds, limi
   }
   else if (mode === 'araba') {
     progress(t('Yol süreleri hesaplanıyor…'));
-    await carTimes(origin, picked);
+    await roadTimes(origin, picked, mode);
+  }
+  else if (bike) {
+    progress(t('Bisiklet yolları ve yokuşlar hesaplanıyor…'));
+    await roadTimes(origin, picked, mode);
+    await addClimb(origin, picked.filter(p => !p.unreachable));
   }
 
   const ok = picked.filter(p => {

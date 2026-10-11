@@ -895,4 +895,11 @@ export default {
   "{a} → {b} · uçuşun kendisi yaklaşık {f}": "{a} → {b} · the flight itself takes about {f}",
   "Direkt uçuş olup olmadığını ve fiyatı uçuş sitesinden kontrol et.": "Check on a flight site whether there is a direct flight and what it costs.",
   "Uçuşlara bak": "See flights",
+  "Bisiklet": "Bike",
+  "Bisiklet yolları ve yokuşlar hesaplanıyor…": "Calculating bike routes and climbs…",
+  "Bisiklet süreleri bisiklet yollarına göre, ortalama bir sürücü için hesaplanır; kavşak ve mola payı ile yokuş farkı eklenmiştir, hepsi tahmindir.": "Bike times are calculated along cycling routes for an average rider, with an allowance for junctions and breaks plus the height difference. All of it is an estimate.",
+  "Yükseklik: {a} m → {b} m": "Elevation: {a} m → {b} m",
+  "Yokuşlar süreyi uzatır. Bu tahmin yalnızca başlangıç ile varış arasındaki yükseklik farkını sayar, aradaki tepeleri değil; rotayı bisiklet haritasında kontrol et.": "Hills add time. This estimate only counts the height difference between the start and the destination, not the hills in between. Check the route on a cycling map.",
+  "Dönüşte yorulursan trene binebilirsin; bazı trenlerde bisiklet için ayrı bilet ya da rezervasyon gerekir, önceden bak.": "If you get tired on the way back you can take a train. Some trains need a separate ticket or a reservation for the bike, so check beforehand.",
+  "Bisiklet rotası": "Bike route",
 };
